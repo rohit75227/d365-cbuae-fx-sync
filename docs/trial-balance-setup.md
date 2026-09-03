@@ -93,11 +93,21 @@ produced a **silently wrong, not obviously wrong** trial balance:
 
 Surfaced as a warning banner on the report itself, not hidden:
 
-- **HBCB**: off by +278,118,823.43 (AED), consistent period over period. A
-  small, newly-onboarded entity (data starts ~Sep 2024, ~480 GL lines
-  total). Looks like a pre-D365-migration opening-balance plug to Retained
-  Earnings that predates this ledger's date range — **not confirmed with
-  finance**, worth a direct question to whoever ran HBCB's D365 go-live.
+- **HBCB**: off by +278,118,823.43 (AED). **Confirmed cause (per report
+  owner): HBCB's FY2025 year-end close hasn't been run yet.** Verified in
+  the data: HBCB's full, unrestricted ledger (every account, every date,
+  no fiscal-year scoping) nets to ~0.00 — nothing is missing from
+  Databricks — but HBCB's CLG-tagged closing entries for Jan-2025 and
+  Jan-2026 touch only Balance Sheet accounts, never P&L, unlike every
+  other entity. That means HBCB's 2024/2025 P&L (e.g. `4140003`
+  Intercompany Dividend Income, cumulative -339,012,573.21 spanning
+  Dec 2024-Jul 2026) was never transferred into Retained Earnings. Our
+  query correctly excludes prior-year P&L from the current-year view, but
+  since it was also never rolled into equity, it just disappears from the
+  report — hence the gap. **This should self-resolve on its own** once
+  finance posts HBCB's FY2025 close in D365 (no query change needed) —
+  worth confirming it clears on the next sync after that happens, rather
+  than assuming it's fixed.
 - **HBUK**: off by -18,000.00 (accounting currency) / -24,683.40 (reporting
   currency).
 - **HBLL**: off by -0.02 — immaterial, likely rounding.

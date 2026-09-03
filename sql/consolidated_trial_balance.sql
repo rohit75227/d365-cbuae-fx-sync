@@ -67,11 +67,14 @@
 -- (do not silently re-exclude data trying to force these to zero -- flag
 -- them to finance instead, per the project's own "surface data-quality
 -- findings" working practice):
---   - HBCB: off by +278,118,823.43 (AED). A small, newly-onboarded entity
---     (data starts ~Sep 2024, ~480 lines total) -- looks like a
---     pre-D365-migration opening-balance plug to Retained Earnings that
---     predates this ledger's date range, not a filter bug, but not
---     confirmed with finance.
+--   - HBCB: off by +278,118,823.43 (AED). Confirmed cause (per report
+--     owner): HBCB's FY2025 year-end close hasn't been run yet -- its CLG
+--     closing entries touch only Balance Sheet accounts, never P&L (unlike
+--     every other entity), so 2024/2025 P&L was never transferred into
+--     Retained Earnings. HBCB's full, unrestricted ledger (no fiscal-year
+--     scoping) nets to ~0.00, so nothing is missing from Databricks -- this
+--     should self-resolve once that close is posted in D365. Not a query
+--     bug; don't "fix" it here.
 --   - HBUK: off by -18,000.00 (accounting) / -24,683.40 (reporting).
 --   - HBFR: reporting-currency-only, off by +2,443.07 (accounting currency
 --     ties exactly) -- looks like an FX-translation rounding artifact.
