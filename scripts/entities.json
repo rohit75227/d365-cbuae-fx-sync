@@ -1,0 +1,21 @@
+{
+  "_note": "Legal entities from the GL Reporting project instructions, excluding every entity whose code contains 'KY' per the mandatory exclusion rule. Consolidation ledgers (CHBD, CHBI, CHBU) and the shared/default company (DAT) are intentionally left out of this list as they are not operating companies for a trial balance -- confirm this assumption with finance before the report goes live.",
+  "entities": [
+    { "code": "HBDM", "ledgerRecId": 5637145326, "accountingCurrency": "AED", "reportingCurrency": "USD" },
+    { "code": "HBFZ", "ledgerRecId": 5637145327, "accountingCurrency": "AED", "reportingCurrency": "USD" },
+    { "code": "HBUS", "ledgerRecId": 5637145328, "accountingCurrency": "USD", "reportingCurrency": "USD" },
+    { "code": "HBLL", "ledgerRecId": 5637145329, "accountingCurrency": "AED", "reportingCurrency": "USD" },
+    { "code": "HBUK", "ledgerRecId": 5637145330, "accountingCurrency": "GBP", "reportingCurrency": "USD" },
+    { "code": "HBFR", "ledgerRecId": 5637145331, "accountingCurrency": "EUR", "reportingCurrency": "USD" },
+    { "code": "HBPN", "ledgerRecId": 5637146076, "accountingCurrency": "USD", "reportingCurrency": "USD" },
+    { "code": "HBCQ", "ledgerRecId": 5637146826, "accountingCurrency": "AED", "reportingCurrency": "USD" },
+    { "code": "HBBV", "ledgerRecId": 5637147577, "accountingCurrency": "USD", "reportingCurrency": null, "reportingCurrencyFallback": true },
+    { "code": "HBIN", "ledgerRecId": 5637147578, "accountingCurrency": "USD", "reportingCurrency": "USD" },
+    { "code": "HBFM", "ledgerRecId": 5637147579, "accountingCurrency": "USD", "reportingCurrency": null, "reportingCurrencyFallback": true },
+    { "code": "HBAQ", "ledgerRecId": 5637147580, "accountingCurrency": "USD", "reportingCurrency": "USD" },
+    { "code": "HBIM", "ledgerRecId": 5637149076, "accountingCurrency": "USD", "reportingCurrency": "USD" },
+    { "code": "HBDS", "ledgerRecId": 5637149826, "accountingCurrency": "AED", "reportingCurrency": "USD" },
+    { "code": "HBCB", "ledgerRecId": 5637150576, "accountingCurrency": "USD", "reportingCurrency": "USD" },
+    { "code": "HBSG", "ledgerRecId": 5637154326, "accountingCurrency": "SGD", "reportingCurrency": "USD" }
+  ]
+}
