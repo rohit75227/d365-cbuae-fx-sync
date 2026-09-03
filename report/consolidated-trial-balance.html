@@ -1,0 +1,636 @@
+<title>Consolidated Trial Balance</title>
+<style>
+  :root{
+    --hb-pink:#ED3B86;
+    --hb-pink-ink:#8a0f47;
+    --hb-nude:#C9907A;
+    --hb-cloud:#F0EDEA;
+    --hb-vanta:#1A1A1A;
+    --hb-charcoal:#454041;
+    --hb-white:#FFFFFF;
+
+    --bg: var(--hb-cloud);
+    --surface: var(--hb-white);
+    --surface-2: #FBFAF9;
+    --text: var(--hb-charcoal);
+    --text-dim: #7a7476;
+    --border: #E2DCD7;
+    --accent: var(--hb-pink);
+    --accent-ink: #FFFFFF;
+    --total-row-bg: #FBE7F1;
+    --total-row-border: #F3B9D3;
+    --header-row-bg: var(--hb-charcoal);
+    --header-row-text: var(--hb-white);
+    --warn-bg: #FCEFD8;
+    --warn-border: #E8B95B;
+    --warn-text: #6b4a10;
+    --shadow: 0 1px 2px rgba(26,26,26,.06), 0 8px 24px -12px rgba(26,26,26,.18);
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg: var(--hb-vanta);
+      --surface: #241F20;
+      --surface-2: #2B2526;
+      --text: #F2EEEC;
+      --text-dim: #ABA3A0;
+      --border: #3A3335;
+      --accent: var(--hb-pink);
+      --accent-ink: #FFFFFF;
+      --total-row-bg: #3A1E2C;
+      --total-row-border: #6b2c4a;
+      --header-row-bg: #2B2526;
+      --header-row-text: #F2EEEC;
+      --warn-bg: #3d2f14;
+      --warn-border: #8a691f;
+      --warn-text: #f0d18c;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: var(--hb-vanta);
+    --surface: #241F20;
+    --surface-2: #2B2526;
+    --text: #F2EEEC;
+    --text-dim: #ABA3A0;
+    --border: #3A3335;
+    --accent: var(--hb-pink);
+    --accent-ink: #FFFFFF;
+    --total-row-bg: #3A1E2C;
+    --total-row-border: #6b2c4a;
+    --header-row-bg: #2B2526;
+    --header-row-text: #F2EEEC;
+    --warn-bg: #3d2f14;
+    --warn-border: #8a691f;
+    --warn-text: #f0d18c;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family: Arial, Helvetica, system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .display{
+    font-family:"Review Poster","Review Condensed","Review","Arial Black","Impact",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.02em;
+  }
+  .eyebrow{
+    font-family:"Review Condensed","Review","Arial Black",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.14em;
+    font-size:11px;
+  }
+
+  header.masthead{
+    background:var(--accent);
+    color:#fff;
+    padding:22px clamp(16px,3vw,40px) 20px;
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:24px;
+    flex-wrap:wrap;
+  }
+  header.masthead .title-block h1{
+    font-size:clamp(22px,3vw,32px);
+    margin:0 0 4px;
+    text-wrap:balance;
+  }
+  header.masthead .title-block .eyebrow{ opacity:.85; }
+  header.masthead .wordmark{
+    font-family:"Review Condensed","Review","Arial Black",Arial,sans-serif;
+    font-weight:900;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-size:13px;
+    opacity:.9;
+    white-space:nowrap;
+  }
+
+  .controls{
+    background:var(--surface-2);
+    border-bottom:1px solid var(--border);
+    padding:14px clamp(16px,3vw,40px);
+    display:flex;
+    align-items:center;
+    gap:20px;
+    flex-wrap:wrap;
+  }
+  .control-group{ display:flex; flex-direction:column; gap:6px; }
+  .control-group .eyebrow{ color:var(--text-dim); }
+
+  .segmented{
+    display:inline-flex;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:3px;
+    gap:2px;
+  }
+  .segmented button{
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:var(--text);
+    font:inherit;
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    font-size:12px;
+    padding:8px 16px;
+    border-radius:999px;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+  }
+  .segmented button.active{
+    background:var(--accent);
+    color:var(--accent-ink);
+  }
+  .segmented button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  select{
+    appearance:none;
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+    background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="%23454041"/></svg>') no-repeat right 12px center;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 32px 9px 14px;
+    cursor:pointer;
+  }
+  select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  .status-pill{
+    margin-left:auto;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .status-dot{ width:7px; height:7px; border-radius:50%; background:#3fa34d; flex:none; }
+  .status-dot.stale{ background:var(--hb-nude); }
+
+  main{ padding:20px clamp(16px,3vw,40px) 48px; }
+
+  .banner{
+    display:flex;
+    gap:10px;
+    align-items:flex-start;
+    background:var(--warn-bg);
+    border:1px solid var(--warn-border);
+    color:var(--warn-text);
+    border-radius:10px;
+    padding:12px 16px;
+    font-size:13px;
+    margin-bottom:16px;
+  }
+  .banner strong{ font-family:"Review Condensed",Arial,sans-serif; text-transform:uppercase; letter-spacing:.04em; }
+  .banner.simulated{
+    background:var(--total-row-bg);
+    border-color:var(--total-row-border);
+    color:var(--text);
+  }
+  td.simulated{
+    background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(237,59,134,.12) 6px, rgba(237,59,134,.12) 12px);
+    border-bottom:2px dashed var(--accent) !important;
+    cursor:help;
+  }
+
+  .table-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    box-shadow:var(--shadow);
+    overflow:hidden;
+  }
+  .table-scroll{
+    overflow-x:auto;
+    max-height:70vh;
+    overflow-y:auto;
+  }
+  table{
+    border-collapse:separate;
+    border-spacing:0;
+    width:100%;
+    font-variant-numeric: tabular-nums;
+    font-size:13px;
+  }
+  thead th{
+    position:sticky;
+    top:0;
+    z-index:3;
+    background:var(--header-row-bg);
+    color:var(--header-row-text);
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    font-weight:700;
+    font-size:11.5px;
+    padding:11px 14px;
+    text-align:right;
+    white-space:nowrap;
+    border-bottom:1px solid var(--border);
+  }
+  thead th.col-account, thead th.col-name{ text-align:left; }
+  thead th .ccy-tag{
+    display:block;
+    font-weight:400;
+    opacity:.7;
+    letter-spacing:.03em;
+    font-size:10px;
+    margin-top:2px;
+  }
+  thead th.col-account{ left:0; z-index:4; min-width:96px; }
+  thead th.col-name{ left:96px; z-index:4; min-width:220px; }
+
+  tbody td{
+    padding:9px 14px;
+    text-align:right;
+    white-space:nowrap;
+    border-bottom:1px solid var(--border);
+    color:var(--text);
+  }
+  tbody td.col-account, tbody td.col-name{
+    text-align:left;
+    position:sticky;
+    background:var(--surface);
+    z-index:1;
+  }
+  tbody td.col-account{ left:0; font-weight:700; min-width:96px; }
+  tbody td.col-name{ left:96px; min-width:220px; color:var(--text-dim); }
+  tbody tr:nth-child(even) td{ background-color:var(--surface-2); }
+  tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name{ background-color:var(--surface-2); }
+  tbody tr:hover td{ background-color:var(--total-row-bg); }
+  tbody tr:hover td.col-account, tbody tr:hover td.col-name{ background-color:var(--total-row-bg); }
+
+  td.neg{ color:#b8264f; }
+  td.zero{ color:var(--text-dim); }
+  td.col-total{ font-weight:700; border-left:2px solid var(--border); }
+  th.col-total{ border-left:2px solid rgba(255,255,255,.25); }
+  td.na, th.na-note{ color:var(--text-dim); font-style:italic; font-weight:400; }
+
+  tfoot td{
+    position:sticky;
+    bottom:0;
+    background:var(--total-row-bg);
+    border-top:2px solid var(--total-row-border);
+    font-weight:800;
+    padding:12px 14px;
+    color:var(--text);
+    z-index:2;
+  }
+  tfoot td.col-account, tfoot td.col-name{
+    position:sticky;
+    left:0;
+    background:var(--total-row-bg);
+  }
+  tfoot td.col-name{ left:96px; }
+  tfoot td.col-total{ border-left:2px solid var(--total-row-border); }
+
+  .empty-state{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:56px 32px;
+    text-align:center;
+    box-shadow:var(--shadow);
+  }
+  .empty-state .display{ font-size:20px; color:var(--accent); margin:0 0 10px; }
+  .empty-state p{ color:var(--text-dim); max-width:520px; margin:0 auto; line-height:1.55; font-size:14px; }
+  .empty-state code{
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:2px 6px;
+    font-size:12.5px;
+  }
+
+  footer.notes{
+    margin-top:20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px 28px;
+    font-size:12px;
+    color:var(--text-dim);
+    line-height:1.6;
+  }
+  footer.notes .wordmark{
+    font-family:"Review Condensed","Review","Arial Black",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--text);
+    font-weight:800;
+  }
+  footer.notes ul{ margin:4px 0 0; padding-left:18px; }
+
+  @media (prefers-reduced-motion: no-preference){
+    .segmented button{ transition:background .15s ease, color .15s ease; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="title-block">
+    <div class="eyebrow">GL Reporting &middot; hb_catalog.db_bronze_d365</div>
+    <h1 class="display">Consolidated Trial Balance</h1>
+  </div>
+  <div class="wordmark">Huda Beauty</div>
+</header>
+
+<div class="controls">
+  <div class="control-group">
+    <span class="eyebrow">Currency</span>
+    <div class="segmented" id="ccy-toggle" role="group" aria-label="Currency basis">
+      <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
+      <button type="button" data-ccy="accounting">Accounting</button>
+    </div>
+  </div>
+  <div class="control-group">
+    <span class="eyebrow">Period</span>
+    <select id="period-select" aria-label="Fiscal year and period"></select>
+  </div>
+  <div class="status-pill">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Connecting&hellip;</span>
+  </div>
+</div>
+
+<main>
+  <div id="banner-host"></div>
+  <div id="report-host">
+    <div class="empty-state">
+      <p class="display">Loading</p>
+      <p>Connecting to the report database&hellip;</p>
+    </div>
+  </div>
+  <footer class="notes" id="notes-host" hidden>
+    <span class="wordmark">Huda Beauty</span>
+    <span>Source: <code>hb_catalog.db_bronze_d365</code> &middot; refreshed daily from Databricks</span>
+    <span>Excludes all entities with a code containing &ldquo;KY&rdquo; and CLG year-end closing vouchers</span>
+    <span>HBBV / HBFM reporting-currency amounts fall back to accounting currency (USD)</span>
+    <span>† marks a cell with a simulated, not-yet-posted adjustment — hover the cell for details</span>
+  </footer>
+</main>
+
+<script>
+(function(){
+  'use strict';
+
+  var state = {
+    db: null,
+    index: null,
+    periodKey: null,
+    ccy: 'reporting',
+    unsubPeriod: null,
+    currentPeriodDoc: null,
+  };
+
+  var statusDot = document.getElementById('status-dot');
+  var statusText = document.getElementById('status-text');
+  var reportHost = document.getElementById('report-host');
+  var bannerHost = document.getElementById('banner-host');
+  var notesHost = document.getElementById('notes-host');
+  var periodSelect = document.getElementById('period-select');
+  var ccyToggle = document.getElementById('ccy-toggle');
+
+  function setStatus(text, stale){
+    statusText.textContent = text;
+    statusDot.classList.toggle('stale', !!stale);
+  }
+
+  function renderEmpty(title, body){
+    notesHost.hidden = true;
+    reportHost.innerHTML =
+      '<div class="empty-state">' +
+        '<p class="display">' + title + '</p>' +
+        '<p>' + body + '</p>' +
+      '</div>';
+  }
+
+  function fmtAmount(value){
+    if (value === null || value === undefined) return { text: '–', cls: 'zero' };
+    var rounded = Math.round(Math.abs(value) * 100) / 100;
+    if (rounded === 0) return { text: '–', cls: 'zero' };
+    var text = rounded.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (value < 0) return { text: '(' + text + ')', cls: 'neg' };
+    return { text: text, cls: '' };
+  }
+
+  function periodLabel(p){
+    var MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var m = MONTHS[p.period] || ('P' + p.period);
+    return m + ' ' + p.fiscalYear + ' · FY' + p.fiscalYear + ' P' + p.period;
+  }
+
+  function renderBanner(warnings){
+    warnings = warnings || [];
+    var simulated = warnings.filter(function(w){ return w.indexOf('SIMULATED') !== -1; });
+    var real = warnings.filter(function(w){ return w.indexOf('SIMULATED') === -1; });
+    var html = '';
+    if (real.length){
+      html += '<div class="banner"><strong>Control-total check:</strong>&nbsp;' +
+        real.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
+        '</div>';
+    }
+    if (simulated.length){
+      html += '<div class="banner simulated"><strong>Includes simulated, not-yet-posted adjustments:</strong>&nbsp;' +
+        simulated.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
+        ' &mdash; the affected cells below are marked with a diagonal pattern.</div>';
+    }
+    bannerHost.innerHTML = html;
+  }
+
+  function escapeHtml(s){
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderTable(periodDoc, shardRows){
+    var entities = periodDoc.entities || [];
+    var ccy = state.ccy;
+    var showTotals = ccy === 'reporting';
+
+    var simulatedMap = {};
+    (periodDoc.simulatedAdjustments || []).forEach(function(adj){
+      simulatedMap[adj.mainAccountId + '|' + adj.entity] = adj;
+    });
+
+    var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
+    entities.forEach(function(e){
+      var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
+      thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
+    });
+    thead += showTotals
+      ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
+      : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
+    thead += '</tr>';
+
+    var totalsByEntity = {};
+    entities.forEach(function(e){ totalsByEntity[e.code] = 0; });
+    var grandTotal = 0;
+
+    var bodyRows = shardRows.map(function(acc){
+      var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
+      var rowTotal = 0;
+      var rowHasReporting = true;
+      entities.forEach(function(e){
+        var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
+        var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
+        if (ccy === 'reporting' && raw === null && cell) raw = null;
+        var f = fmtAmount(raw);
+        var adj = simulatedMap[acc.mainAccountId + '|' + e.code];
+        var cellCls = f.cls + (adj ? ' simulated' : '');
+        var cellTitle = adj ? ' title="' + escapeHtml(adj.reason) + '"' : '';
+        row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
+        if (ccy === 'reporting'){
+          if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
+        } else {
+          if (raw !== null){ totalsByEntity[e.code] += raw; }
+        }
+      });
+      if (showTotals){
+        var ft = fmtAmount(rowTotal);
+        row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
+        grandTotal += rowTotal;
+      } else {
+        row += '<td class="col-total na">n/a</td>';
+      }
+      row += '</tr>';
+      return row;
+    }).join('');
+
+    var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>';
+    entities.forEach(function(e){
+      if (ccy === 'accounting'){
+        footRow += '<td class="na-note">n/a</td>';
+      } else {
+        var f = fmtAmount(totalsByEntity[e.code]);
+        footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+      }
+    });
+    if (showTotals){
+      var fg = fmtAmount(grandTotal);
+      footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
+    } else {
+      footRow += '<td class="col-total na">n/a</td>';
+    }
+
+    reportHost.innerHTML =
+      '<div class="table-card"><div class="table-scroll"><table>' +
+        '<thead>' + thead + '</thead>' +
+        '<tbody>' + bodyRows + '</tbody>' +
+        '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+      '</table></div></div>';
+
+    notesHost.hidden = false;
+    if (ccy === 'accounting'){
+      bannerHost.innerHTML =
+        '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency for a consolidated total.</div>' +
+        bannerHost.innerHTML;
+    }
+  }
+
+  function loadPeriod(key){
+    if (!state.db || !key) return;
+    if (state.unsubPeriod) { state.unsubPeriod(); state.unsubPeriod = null; }
+
+    setStatus('Loading ' + key + '…');
+    var periodDocRef = state.db.doc('tb/' + key);
+
+    state.unsubPeriod = periodDocRef.onSnapshot(function(snap){
+      if (!snap.exists){
+        renderEmpty('No data for this period', 'The sync job has not produced a snapshot for <code>' + key + '</code> yet.');
+        return;
+      }
+      var doc = snap.data();
+      state.currentPeriodDoc = doc;
+      renderBanner(doc.warnings);
+
+      var shardCount = doc.shardCount || 0;
+      var shardPromises = [];
+      for (var i = 0; i < shardCount; i++){
+        shardPromises.push(state.db.doc('tb/' + key + '/shards/' + i).get());
+      }
+      Promise.all(shardPromises).then(function(snaps){
+        var rows = [];
+        snaps.forEach(function(s){
+          if (s.exists && s.data().rows) rows = rows.concat(s.data().rows);
+        });
+        renderTable(doc, rows);
+        setStatus('Synced ' + new Date(doc.generatedAt).toLocaleString() + ' · FY' + doc.fiscalYear + ' P' + doc.period, false);
+      }).catch(function(err){
+        setStatus('Could not load report rows (' + (err && err.code || 'error') + ')', true);
+      });
+    }, function(err){
+      setStatus('Database error: ' + err.code, true);
+    });
+  }
+
+  function loadIndex(){
+    var indexRef = state.db.doc('tb/index');
+    indexRef.onSnapshot(function(snap){
+      if (!snap.exists || !snap.data().periods || !snap.data().periods.length){
+        renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet. The daily Databricks sync writes here automatically once it has run &mdash; this page updates itself, no reload needed.');
+        setStatus('No data yet', true);
+        return;
+      }
+      var periods = snap.data().periods.slice().sort(function(a,b){
+        return (b.fiscalYear - a.fiscalYear) || (b.period - a.period);
+      });
+      state.index = periods;
+      var prevSelection = periodSelect.value;
+      periodSelect.innerHTML = periods.map(function(p){
+        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
+      }).join('');
+      var toSelect = periods.some(function(p){ return p.key === prevSelection; }) ? prevSelection : periods[0].key;
+      periodSelect.value = toSelect;
+      if (toSelect !== state.periodKey){
+        state.periodKey = toSelect;
+        loadPeriod(toSelect);
+      }
+    }, function(err){
+      setStatus('Database error: ' + err.code, true);
+    });
+  }
+
+  ccyToggle.addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-ccy]');
+    if (!btn) return;
+    state.ccy = btn.getAttribute('data-ccy');
+    Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){
+      b.classList.toggle('active', b === btn);
+    });
+    if (state.currentPeriodDoc && state.periodKey){
+      loadPeriod(state.periodKey);
+    }
+  });
+
+  periodSelect.addEventListener('change', function(){
+    state.periodKey = periodSelect.value;
+    loadPeriod(state.periodKey);
+  });
+
+  (async function init(){
+    try{
+      state.db = await window.claude.use('db');
+    } catch (e){
+      state.db = null;
+    }
+    if (!state.db){
+      renderEmpty('Report database unavailable', 'This view could not connect to the report’s data store. Try reopening the report, or contact Business Solutions if this persists.');
+      setStatus('Unavailable', true);
+      return;
+    }
+    loadIndex();
+  })();
+})();
+</script>

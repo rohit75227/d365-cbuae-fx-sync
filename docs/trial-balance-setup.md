@@ -19,6 +19,10 @@ it's been replaced.
 
 ## What's here
 
+- `report/consolidated-trial-balance.html` — source for the published
+  Artifact. Edit this, then republish it to the same URL (from a session
+  that has published it before, passing that `url`) to push a UI change
+  live — the Artifact tool doesn't read from this repo automatically.
 - `sql/consolidated_trial_balance.sql` — the query, with extensive comments
   on three bugs found and fixed by testing live against real data (see
   "Findings from live validation" below).
@@ -88,6 +92,28 @@ produced a **silently wrong, not obviously wrong** trial balance:
    with nothing to offset it. Fixed by excluding CLG-tagged entries **only**
    from the P&L bucket, never the Balance Sheet bucket. This alone fixed 14
    of 16 entities to net to exactly 0.00 debits=credits.
+
+## Simulated adjustments (pro-forma, not posted in D365)
+
+`scripts/apply_simulated_adjustments.py` lets a report viewer see the
+trial balance "as if" a known-pending D365 entry had already been posted
+— without ever touching the SQL query or blending a made-up number silently
+into real GL data. Every use is recorded in the period document's
+`simulatedAdjustments` array; the report renders those cells with a
+dashed/diagonal pattern and a `†` marker (hover for the reason), and the
+warning banner splits into a real "control-total check" section and a
+separate "includes simulated, not-yet-posted adjustments" section — never
+merged into one so a viewer can't mistake a simulated figure for a posted
+one.
+
+**Applied 2026-09-03** (at the report owner's request): HBCB's Retained
+Earnings — Accumulated (`3141001`) was adjusted by -278,118,823.43 (both
+accounting and reporting currency) to simulate its pending FY2025
+year-end close. This makes HBCB's control total balance to ~0.00 in the
+report, but **the actual close has not been posted in D365** — this is a
+projection, not a fact. Re-run this adjustment on every future sync of
+FY2026 periods until the real closing entry lands in Databricks, at which
+point remove it (the real data will already balance on its own).
 
 ## Known open control-total exceptions
 
