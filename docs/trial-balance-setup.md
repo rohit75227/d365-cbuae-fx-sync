@@ -2,8 +2,9 @@
 
 Report link: https://claude.ai/code/artifact/713b7be7-486a-4a4d-a0bd-f5b9f964b2ac
 
-**Live as of 2026-09-03** with real data for FY2026 periods 8 (August, complete)
-and 9 (September, in progress) — no further setup needed for the data source.
+**Live as of 2026-09-03** with real data for all 93 periods from FY2019 P1
+through FY2026 P9 (September, in progress) — full history, no further
+setup needed for the data source.
 
 ## How data gets in (no credentials needed)
 
@@ -52,13 +53,33 @@ org; otherwise the report will need a manual re-sync each day — ask Claude
 to "sync the trial balance for the current period" and it can do so
 immediately, live, in under a minute.
 
-## Backfilling or re-running a period manually
+## Backfilling or re-running periods manually
 
-Ask Claude directly (in this session or a new one with the same repo and
-connector access): "sync the consolidated trial balance for FY<year>
-period <1-12>". The whole pipeline (render query → run via connector →
-transform → shard → write to the report's database) took well under a
-few minutes end to end when validated live.
+**Full history (2019-01 through 2026-09) is already loaded** — all 93
+periods, done 2026-09-03 via `scripts/backfill_all_periods.py` +
+`scripts/prepare_backfill_writes.py` rather than running
+`sql/consolidated_trial_balance.sql` 93 times. That approach: fetch two
+monthly-grain queries (BS movement including CLG, PL movement excluding
+CLG) paginated via `ROW_NUMBER()` per the mandatory truncation rule (30,352
+BS rows + 31,721 PL rows, each split into ~12,000-row pages), then
+forward-fill (Balance Sheet, cumulative since inception) or year-reset
+(P&L, resets every January) the monthly deltas in Python to reconstruct
+every period from those 6 queries instead of 93 full-table scans.
+`backfill_all_periods.py` validates pagination integrity (no gaps or
+duplicate row numbers across pages) before trusting either result, and
+its output matched the point-in-time query's numbers exactly on the
+periods already validated (FY2026 P8/P9).
+
+For a single new period (e.g. once FY2026 P10 exists), the simpler
+one-period pipeline still works and is what the daily Routine uses: ask
+Claude to "sync the consolidated trial balance for FY<year> period
+<1-12>" — render query → run via connector → transform → shard → write,
+under a minute end to end. Reach for the bulk backfill scripts only when
+re-deriving many periods at once (e.g. a schema change forces a full
+re-run) — `prepare_backfill_writes.py` re-applies the HBCB/HBUK simulated
+adjustments to whichever periods still need them (same threshold check as
+the daily Routine), so re-running the full backfill after those close
+entries land in D365 will correctly stop simulating them.
 
 ## Findings from live validation (2026-09-03)
 
