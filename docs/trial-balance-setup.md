@@ -106,14 +106,37 @@ separate "includes simulated, not-yet-posted adjustments" section — never
 merged into one so a viewer can't mistake a simulated figure for a posted
 one.
 
-**Applied 2026-09-03** (at the report owner's request): HBCB's Retained
-Earnings — Accumulated (`3141001`) was adjusted by -278,118,823.43 (both
-accounting and reporting currency) to simulate its pending FY2025
-year-end close. This makes HBCB's control total balance to ~0.00 in the
-report, but **the actual close has not been posted in D365** — this is a
-projection, not a fact. Re-run this adjustment on every future sync of
-FY2026 periods until the real closing entry lands in Databricks, at which
-point remove it (the real data will already balance on its own).
+**Applied 2026-09-03** (at the report owner's request):
+- HBCB's Retained Earnings — Accumulated (`3141001`) was adjusted by
+  -278,118,823.43 (both currencies) to simulate its pending FY2025
+  year-end close.
+- HBUK's Retained Earnings — Accumulated (`3141001`) was adjusted by
+  +18,000.00 accounting / +24,683.40 reporting, to simulate the FY2025
+  close (voucher `clguk25v2`) having correctly reversed account `6210008`
+  instead of falling 18,000.00 short.
+
+Both make their entity's control total balance to ~0.00 in the report,
+but **neither correction has actually been posted in D365** — these are
+projections, not facts. Re-run both adjustments on every future sync of
+FY2026 periods until the real entries land in Databricks (the daily
+Routine's prompt checks this automatically), at which point remove the
+one(s) that resolved on their own — the real data will already balance.
+
+**HBFR was deliberately NOT given a simulated adjustment.** Its
+accounting-currency total already ties to exactly 0.00 — only the
+reporting-currency (USD) total is off by +2,443.07. Investigated
+2026-09-03: the largest accounting-vs-reporting gaps (e.g. `4110002`
+Product Sales, `1131019` Inventory Issue/Receipt) are all ordinary
+EUR→USD conversion differences, not one anomalous entry — this looks like
+routine historical-rate FX translation residual (EUR debits/credits net
+to zero, but each transaction converts to USD at its own transaction-date
+rate, so the USD totals don't necessarily net to zero even when EUR does).
+That's a real, structural artifact of the translation method, not a
+missing transaction to simulate a fix for — plugging it would mean
+inventing a number with no specific event behind it, unlike HBCB/HBUK
+where a concrete pending/incorrect entry was identified. Leave it as a
+flagged, immaterial ($2,443) warning unless finance identifies an actual
+missing FX Translation Reserve entry to simulate instead.
 
 ## Known open control-total exceptions
 
@@ -135,17 +158,17 @@ Surfaced as a warning banner on the report itself, not hidden:
   worth confirming it clears on the next sync after that happens, rather
   than assuming it's fixed.
 - **HBUK**: off by -18,000.00 (accounting currency) / -24,683.40 (reporting
-  currency). **Traced to a specific cause**, though not fully explained:
-  HBUK's FY2025 year-end close (voucher `clguk25v2`, dated 2025-12-31) was
-  actually posted on **2026-08-13** — eight months late. On account
-  `6210008` "Other Marketing - Influencer", real FY2025 activity was
-  +449,757.21 but the late close only reversed -431,757.21 — short by
-  exactly 18,000.00. Every other account and every other year closes
-  perfectly. Likely a marketing accrual posted to that account after the
-  close figures were calculated, or a manual adjustment that didn't carry
-  into the final reversal — worth asking whoever ran HBUK's FY2025 close
-  in August 2026. Not visible from GL data alone why the close itself ran
-  so late or what exactly caused the shortfall.
+  currency). **Traced to a specific cause, now simulated** (see "Simulated
+  adjustments" above): HBUK's FY2025 year-end close (voucher `clguk25v2`,
+  dated 2025-12-31) was actually posted on **2026-08-13** — eight months
+  late. On account `6210008` "Other Marketing - Influencer", real FY2025
+  activity was +449,757.21 but the late close only reversed -431,757.21 —
+  short by exactly 18,000.00. Every other account and every other year
+  closes perfectly. Likely a marketing accrual posted to that account
+  after the close figures were calculated, or a manual adjustment that
+  didn't carry into the final reversal — worth asking whoever ran HBUK's
+  FY2025 close in August 2026. Not visible from GL data alone why the
+  close itself ran so late or what exactly caused the shortfall.
 - **HBLL**: off by -0.02 — immaterial, likely rounding.
 - **HBFR**: reporting-currency-only, off by +2,443.07 (accounting currency
   ties exactly) — looks like an FX-translation rounding artifact.
