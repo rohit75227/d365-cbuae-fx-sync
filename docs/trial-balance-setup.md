@@ -2,110 +2,139 @@
 
 Report link: https://claude.ai/code/artifact/713b7be7-486a-4a4d-a0bd-f5b9f964b2ac
 
+**Live as of 2026-09-03** with real data for FY2026 periods 8 (August, complete)
+and 9 (September, in progress) — no further setup needed for the data source.
+
+## How data gets in (no credentials needed)
+
 The report reads a shared, org-internal database attached to that Artifact
-(never Databricks directly — a browser page cannot reach Databricks safely).
-A daily job populates that database from `hb_catalog.db_bronze_d365` using
-the logic from the "GL Reporting from D365 Bronze Layer" Claude Project.
-Until that job has run once, the report shows a "waiting for first sync"
-state rather than any figures.
+(a browser page can't reach Databricks directly). Behind that, this session
+has the `claude-databricks-connector` — an org-level, pre-authorized MCP
+connector (`mcp__claude-databricks-connector__execute_sql_read_only` /
+`poll_sql_result`) — so **no service principal, no API token, no environment
+variables are required.** If you see documentation elsewhere in this repo's
+history describing a service-principal / REST API approach, that was the
+original plan before the connector turned out to already be available —
+it's been replaced.
 
 ## What's here
 
-- `sql/consolidated_trial_balance.sql` — the Databricks SQL query. Applies
-  the four mandatory rules from the GL Reporting project (IsDelete
-  COALESCE, uppercase entity comparison, CLG exclusion, truncation check),
-  plus the fiscal-year/period and Balance-Sheet-vs-P&L logic agreed with
-  the report owner (see "Business rules" below).
-- `scripts/entities.json` — the 16 operating legal entities in scope
-  (every `KY*` entity, the consolidation ledgers CHBD/CHBI/CHBU, and the
-  shared `DAT` company are excluded — confirm this is correct before go-live).
-- `scripts/sync_trial_balance.py` — calls Databricks (SQL Statement
-  Execution API), runs the query for one fiscal year/period, and prints a
-  JSON report to stdout. Talks only to Databricks; knows nothing about the
-  Artifact.
-- `scripts/build_db_writes.py` — takes that JSON on stdin and produces the
-  `write_db` batch payloads (sharded to stay under the 256 KiB per-document
-  limit), plus an `indexUpsert` note. Has no Artifact access either — it
-  just prepares the payloads for whoever does.
+- `sql/consolidated_trial_balance.sql` — the query, with extensive comments
+  on three bugs found and fixed by testing live against real data (see
+  "Findings from live validation" below).
+- `scripts/entities.json` — the 16 operating legal entities in scope, with
+  their ledger RECID, accounting currency, and reporting currency.
+- `scripts/render_query.py` — substitutes the period-end/fiscal-year-start
+  tokens in the SQL file with literal `TIMESTAMP` values (the connector
+  takes a raw SQL string, no bind parameters) and prints the finished query.
+- `scripts/transform_connector_result.py` — parses a saved
+  `execute_sql_read_only` result file into the report JSON shape (accounts,
+  entities, control totals, warnings).
+- `scripts/build_db_writes.py` — shards that JSON into `write_db`-ready
+  batches, staying under the 256 KiB per-document limit.
 
-## One-time setup you need to do
+## Daily refresh — one thing left to fix
 
-1. **Create a Databricks service principal**, scoped read-only to
-   `hb_catalog.db_bronze_d365` (least privilege — it should not be able to
-   read or write anything outside that schema):
-   - Databricks workspace → Settings → Identity and access → Service
-     principals → Add service principal.
-   - Grant it `USE CATALOG` on `hb_catalog`, `USE SCHEMA` + `SELECT` on
-     `db_bronze_d365` (or the specific tables: `generaljournalaccountentry`,
-     `generaljournalentry`, `mainaccount`).
-   - Grant it `CAN USE` on the SQL warehouse the sync should run against.
-   - Generate an OAuth secret for it (Service principal → Secrets → Generate
-     secret). Note the **Application ID** and the **secret**.
-2. **Set these as environment variables on the Claude Code Environment**
-   this session runs in (Environment settings in claude.ai/code — never in
-   this repo, never pasted into chat):
-   - `DATABRICKS_HOST` — e.g. `https://hudabeauty.cloud.databricks.com`
-   - `DATABRICKS_WAREHOUSE_ID` — the SQL warehouse's ID (Warehouse →
-     Connection details tab)
-   - `DATABRICKS_CLIENT_ID` — the service principal's Application ID
-   - `DATABRICKS_CLIENT_SECRET` — the OAuth secret generated above
-3. Tell Claude once these are set — the daily Routine (already created,
-   see below) will start succeeding on its next firing.
+A Routine fires into this session daily at 04:00 UTC and follows the steps
+in its own prompt (query → transform → shard → write). **However: this
+platform rejected attaching the Databricks connector to a Routine via the
+API** ("the connectors parameter is not available for this organization").
+That means tomorrow's automatic firing will very likely run *without*
+connector access and do nothing (its prompt tells it to leave a note rather
+than fail silently). **To fix this, enable the connector for this Routine
+from the claude.ai Routines UI** (Settings → Routines → "Daily consolidated
+trial balance sync" → connector access) if that control exists for your
+org; otherwise the report will need a manual re-sync each day — ask Claude
+to "sync the trial balance for the current period" and it can do so
+immediately, live, in under a minute.
 
-## Daily refresh
+## Backfilling or re-running a period manually
 
-A Routine fires into this session once a day. On each firing, Claude:
-1. Runs `python3 scripts/sync_trial_balance.py --fiscal-year <current FY>
-   --period <current period>`.
-2. Pipes that JSON through `scripts/build_db_writes.py`.
-3. Calls the Artifact tool's `write_db` (`db_op: "batch"`) once per batch
-   against the report's URL above, then updates `tb/index` by reading it
-   first and merging in the new period (never blind-overwriting it, so
-   previously synced periods stay browsable).
-4. If `sync_trial_balance.py` reports control-total warnings (an entity's
-   accounting-currency amount doesn't net to ~0.00), those are stored in
-   the period document and shown as a banner on the report — they are not
-   swallowed silently.
+Ask Claude directly (in this session or a new one with the same repo and
+connector access): "sync the consolidated trial balance for FY<year>
+period <1-12>". The whole pipeline (render query → run via connector →
+transform → shard → write to the report's database) took well under a
+few minutes end to end when validated live.
 
-Only the current fiscal year/period is synced by default, so the report's
-period selector will show one option until more periods are backfilled.
+## Findings from live validation (2026-09-03)
 
-## Backfilling historical periods
+Three things the original project instructions didn't cover, found by
+testing against real data before trusting any output — each would have
+produced a **silently wrong, not obviously wrong** trial balance:
 
-Run the same two-script pipeline with a different `--fiscal-year`/`--period`,
-then write its output the same way. Each period is independent and additive
-— syncing 2026 P5 does not touch 2026 P6's data.
+1. **`gje.fiscalcalendaryear` / `gje.fiscalcalendarperiod` are RECIDs, not
+   literal years.** Values look like `5637148326`. There's no fiscal
+   calendar reference table in this bronze schema to resolve them. Fixed
+   by filtering on `gje.accountingdate` (TIMESTAMP, half-open ranges)
+   instead — which is also what the project's own worked CLG example
+   actually does, despite listing the other two columns as available.
+
+2. **`gje.subledgervoucherdataareaid` is NULL for any GL entry not tied to
+   a subledger voucher** — a large share of real postings (accruals,
+   manual journals, intercompany, allocations). Using it to attribute
+   entity/company silently dropped those rows, breaking every entity's
+   debit=credit control total by hundreds of millions. Fixed by switching
+   to `gje.ledger` (a RECID, populated on every row — verified: exactly 24
+   distinct values across all of history, all mapping cleanly to the 16
+   operating entities + 9 `KY*` entities + 8 stray NULL-ledger rows, with
+   nothing left unexplained).
+
+3. **CLG-tagged vouchers aren't purely a "zero out this year's P&L"
+   artifact** — the batch that closes fiscal year N is split across a
+   December-of-year-N posting and a January-of-year-(N+1) posting, and the
+   January posting also carries the *Balance Sheet*-side retained-earnings
+   movement. Excluding all CLG entries from the Balance Sheet bucket (as
+   originally planned) dropped a real one-sided Retained Earnings movement
+   with nothing to offset it. Fixed by excluding CLG-tagged entries **only**
+   from the P&L bucket, never the Balance Sheet bucket. This alone fixed 14
+   of 16 entities to net to exactly 0.00 debits=credits.
+
+## Known open control-total exceptions
+
+Surfaced as a warning banner on the report itself, not hidden:
+
+- **HBCB**: off by +278,118,823.43 (AED), consistent period over period. A
+  small, newly-onboarded entity (data starts ~Sep 2024, ~480 GL lines
+  total). Looks like a pre-D365-migration opening-balance plug to Retained
+  Earnings that predates this ledger's date range — **not confirmed with
+  finance**, worth a direct question to whoever ran HBCB's D365 go-live.
+- **HBUK**: off by -18,000.00 (accounting currency) / -24,683.40 (reporting
+  currency).
+- **HBLL**: off by -0.02 — immaterial, likely rounding.
+- **HBFR**: reporting-currency-only, off by +2,443.07 (accounting currency
+  ties exactly) — looks like an FX-translation rounding artifact.
+
+Do not "fix" these by further tweaking the exclusion logic without finance
+input — the query has already been validated to balance exactly for 14 of
+16 entities, so these four are genuine open questions about the underlying
+data, not query bugs.
 
 ## Business rules baked into the query (confirmed with the report owner)
 
 - **Balance Sheet** (`mainaccountid` 1,000,000–3,999,999): cumulative from
-  ledger inception through the selected period.
+  ledger inception through the selected period, CLG entries included (they
+  carry the real retained-earnings movement).
 - **P&L** (`mainaccountid` ≥ 4,000,000): movement within the selected
-  fiscal year only, using `fiscalcalendaryear`/`fiscalcalendarperiod`
-  (not calendar-date math).
+  fiscal year only, CLG entries excluded (that's the mechanism that zeros
+  P&L at close).
 - **Reporting currency (default view)**: `reportingcurrencyamount`, with
   HBBV and HBFM falling back to `accountingcurrencyamount` since neither
-  has a reporting currency configured in D365 (both are USD-denominated).
+  has a reporting currency configured in D365 (both are USD-denominated,
+  though both currently have zero GL activity anyway).
 - **Accounting currency view**: `accountingcurrencyamount` per company in
   its own local currency; the grand total is hidden in this view since
   summing AED + USD + GBP + EUR + SGD would be meaningless.
-- **Excluded**: any entity whose code contains "KY"; CLG year-end closing
-  vouchers (`subledgervoucher LIKE '%clg%'`, case-insensitive); soft-deleted
-  rows (`IsDelete` is NULL-typed in the source, not `false`, per the GL
-  Reporting project's mandatory rule).
-- **Not included in scope, flag if this is wrong**: consolidation ledgers
-  (CHBD, CHBI, CHBU) and the shared `DAT` company — these aren't in
-  `scripts/entities.json` because they don't represent real operating
-  companies for a trial balance, but this was an assumption, not something
-  explicitly confirmed.
+- **Excluded**: every `KY*` entity, the shared `DAT` company, and the
+  consolidation ledgers CHBD/CHBI/CHBU — verified these have had **zero**
+  GL activity in this bronze schema across all of history, so excluding
+  them cost nothing in practice, not just in theory.
 
 ## Sharing the report
 
 The report database makes the Artifact **organization-internal**: every
 reader and writer must be a signed-in member of the Huda Beauty Claude
 organization — it cannot be made public. Share it with the finance team
-from the Artifact's share menu; anyone you share it with can open the same
-link at any time and always sees the latest synced data, live (the page
-subscribes to the database, so it updates in place — no reload needed).
+from the Artifact's share menu; anyone you share it with sees the latest
+synced data live (the page subscribes to the database — no reload needed).
 Page writes are locked to admin-level sharing, so a viewer opening the
 report cannot alter the figures from their browser.
