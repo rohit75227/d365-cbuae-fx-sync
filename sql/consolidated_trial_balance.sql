@@ -75,7 +75,14 @@
 --     scoping) nets to ~0.00, so nothing is missing from Databricks -- this
 --     should self-resolve once that close is posted in D365. Not a query
 --     bug; don't "fix" it here.
---   - HBUK: off by -18,000.00 (accounting) / -24,683.40 (reporting).
+--   - HBUK: off by -18,000.00 (accounting) / -24,683.40 (reporting). Traced
+--     to account 6210008 "Other Marketing - Influencer": HBUK's FY2025
+--     close (voucher clguk25v2, dated 2025-12-31) was actually posted
+--     2026-08-13 -- eight months late -- and under-reversed this one
+--     account by exactly 18,000.00 (real activity +449,757.21 vs. reversal
+--     -431,757.21). Every other account/year closes perfectly. Root cause
+--     of the shortfall itself (late accrual vs. manual adjustment) isn't
+--     visible from GL data -- ask whoever ran that close.
 --   - HBFR: reporting-currency-only, off by +2,443.07 (accounting currency
 --     ties exactly) -- looks like an FX-translation rounding artifact.
 -- ============================================================================

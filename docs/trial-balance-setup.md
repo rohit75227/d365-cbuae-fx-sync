@@ -109,7 +109,17 @@ Surfaced as a warning banner on the report itself, not hidden:
   worth confirming it clears on the next sync after that happens, rather
   than assuming it's fixed.
 - **HBUK**: off by -18,000.00 (accounting currency) / -24,683.40 (reporting
-  currency).
+  currency). **Traced to a specific cause**, though not fully explained:
+  HBUK's FY2025 year-end close (voucher `clguk25v2`, dated 2025-12-31) was
+  actually posted on **2026-08-13** — eight months late. On account
+  `6210008` "Other Marketing - Influencer", real FY2025 activity was
+  +449,757.21 but the late close only reversed -431,757.21 — short by
+  exactly 18,000.00. Every other account and every other year closes
+  perfectly. Likely a marketing accrual posted to that account after the
+  close figures were calculated, or a manual adjustment that didn't carry
+  into the final reversal — worth asking whoever ran HBUK's FY2025 close
+  in August 2026. Not visible from GL data alone why the close itself ran
+  so late or what exactly caused the shortfall.
 - **HBLL**: off by -0.02 — immaterial, likely rounding.
 - **HBFR**: reporting-currency-only, off by +2,443.07 (accounting currency
   ties exactly) — looks like an FX-translation rounding artifact.
