@@ -19,7 +19,7 @@
     --accent-ink: #FFFFFF;
     --total-row-bg: #FBE7F1;
     --total-row-border: #F3B9D3;
-    --header-row-bg: var(--hb-charcoal);
+    --header-row-bg: var(--hb-pink);
     --header-row-text: var(--hb-white);
     --warn-bg: #FCEFD8;
     --warn-border: #E8B95B;
@@ -42,7 +42,7 @@
       --accent-ink: #FFFFFF;
       --total-row-bg: #3A1E2C;
       --total-row-border: #6b2c4a;
-      --header-row-bg: #2B2526;
+      --header-row-bg: var(--hb-pink-ink);
       --header-row-text: #F2EEEC;
       --warn-bg: #3d2f14;
       --warn-border: #8a691f;
@@ -64,7 +64,7 @@
     --accent-ink: #FFFFFF;
     --total-row-bg: #3A1E2C;
     --total-row-border: #6b2c4a;
-    --header-row-bg: #2B2526;
+    --header-row-bg: var(--hb-pink-ink);
     --header-row-text: #F2EEEC;
     --warn-bg: #3d2f14;
     --warn-border: #8a691f;
@@ -96,60 +96,70 @@
   }
 
   header.masthead{
-    background:linear-gradient(120deg, var(--accent) 0%, var(--hb-pink-ink) 130%);
+    background:var(--hb-vanta);
     color:#fff;
-    padding:22px clamp(16px,3vw,40px) 20px;
+    padding:14px clamp(16px,3vw,40px);
     display:flex;
-    align-items:flex-end;
+    align-items:center;
     justify-content:space-between;
     gap:24px;
     flex-wrap:wrap;
+    border-bottom:3px solid var(--accent);
   }
-  header.masthead .title-block h1{
-    font-size:clamp(22px,3vw,32px);
-    margin:0 0 4px;
-    text-wrap:balance;
+  header.masthead .brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
   }
-  header.masthead .title-block .eyebrow{ opacity:.85; }
-  header.masthead .wordmark{
+  header.masthead .logo{
+    font-size:19px;
+    font-weight:400;
+    letter-spacing:-.01em;
+    white-space:nowrap;
+  }
+  header.masthead .logo b{ font-weight:800; }
+  header.masthead .brand-sep{ opacity:.5; }
+  header.masthead .brand-sub{
+    margin:0;
     font-family:"Review Condensed","Review","Arial Black",Arial,sans-serif;
-    font-weight:900;
+    font-weight:700;
     text-transform:uppercase;
     letter-spacing:.08em;
-    font-size:13px;
-    opacity:.9;
+    font-size:12px;
+    opacity:.85;
     white-space:nowrap;
   }
 
   nav.view-tabs{
-    background:var(--surface);
-    border-bottom:1px solid var(--border);
-    padding:0 clamp(16px,3vw,40px);
     display:flex;
-    gap:4px;
+    gap:8px;
     overflow-x:auto;
   }
   nav.view-tabs button{
     appearance:none;
-    border:none;
+    border:1px solid rgba(255,255,255,.4);
     background:transparent;
-    color:var(--text-dim);
+    color:#fff;
     font:inherit;
     font-family:"Review Condensed","Review",Arial,sans-serif;
     font-weight:700;
     text-transform:uppercase;
     letter-spacing:.05em;
-    font-size:13px;
-    padding:14px 18px 12px;
-    border-bottom:3px solid transparent;
+    font-size:12px;
+    padding:8px 16px;
+    border-radius:999px;
     cursor:pointer;
     white-space:nowrap;
+    transition:background .15s ease, border-color .15s ease;
   }
+  nav.view-tabs button:hover{ background:rgba(255,255,255,.1); }
   nav.view-tabs button.active{
-    color:var(--text);
-    border-bottom-color:var(--accent);
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
   }
-  nav.view-tabs button:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  nav.view-tabs button:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
 
   .controls{
     background:var(--surface-2);
@@ -206,6 +216,25 @@
     cursor:pointer;
   }
   select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  .btn-export{
+    appearance:none;
+    font:inherit;
+    font-size:12px;
+    font-weight:700;
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:var(--accent-ink);
+    background:var(--accent);
+    border:none;
+    border-radius:8px;
+    padding:9px 16px;
+    cursor:pointer;
+  }
+  .btn-export:hover:not(:disabled){ filter:brightness(1.06); }
+  .btn-export:disabled{ opacity:.5; cursor:default; }
+  .btn-export:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
   .status-pill{
     margin-left:auto;
@@ -413,18 +442,17 @@
 </style>
 
 <header class="masthead">
-  <div class="title-block">
-    <div class="eyebrow">GL Reporting &middot; hb_catalog.db_bronze_d365</div>
-    <h1 class="display">Consolidated Trial Balance</h1>
+  <div class="brand">
+    <span class="logo"><b>huda</b>beauty</span>
+    <span class="brand-sep">&middot;</span>
+    <h1 class="brand-sub">Consolidated Trial Balance</h1>
   </div>
-  <div class="wordmark">Huda Beauty</div>
+  <nav class="view-tabs" id="view-tabs" role="tablist" aria-label="Report view">
+    <button type="button" data-view="consolidated" class="active" role="tab" aria-selected="true">Consolidated</button>
+    <button type="button" data-view="company" role="tab" aria-selected="false">Company TB</button>
+    <button type="button" data-view="currency" role="tab" aria-selected="false">By Currency</button>
+  </nav>
 </header>
-
-<nav class="view-tabs" id="view-tabs" role="tablist" aria-label="Report view">
-  <button type="button" data-view="consolidated" class="active" role="tab" aria-selected="true">Consolidated</button>
-  <button type="button" data-view="company" role="tab" aria-selected="false">Company TB</button>
-  <button type="button" data-view="currency" role="tab" aria-selected="false">By Currency</button>
-</nav>
 
 <!-- ============================== CONSOLIDATED ============================== -->
 <div class="view-panel" id="panel-consolidated">
@@ -440,6 +468,7 @@
       <span class="eyebrow">Period</span>
       <select id="period-select" aria-label="Fiscal year and period"></select>
     </div>
+    <button type="button" class="btn-export" id="export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
       <span class="status-dot" id="status-dot"></span>
       <span id="status-text">Connecting&hellip;</span>
@@ -481,6 +510,7 @@
         <button type="button" data-ccy="accounting">Accounting</button>
       </div>
     </div>
+    <button type="button" class="btn-export" id="company-export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
       <span class="status-dot" id="company-status-dot"></span>
       <span id="company-status-text">Connecting&hellip;</span>
@@ -521,6 +551,7 @@
         <button type="button" data-ccy="accounting">Accounting</button>
       </div>
     </div>
+    <button type="button" class="btn-export" id="currency-export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
       <span class="status-dot" id="currency-status-dot"></span>
       <span id="currency-status-text">Connecting&hellip;</span>
@@ -543,11 +574,13 @@
   </main>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
   'use strict';
 
   var db = null;
+  var downloadsCap = null; // resolved once at startup; null if downloads aren't available in this view
   var index = null; // sorted period list, shared across views
 
   function fmtAmount(value){
@@ -642,6 +675,7 @@
     var notesHost = document.getElementById('notes-host');
     var periodSelect = document.getElementById('period-select');
     var ccyToggle = document.getElementById('ccy-toggle');
+    var exportBtn = document.getElementById('export-btn');
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -656,6 +690,8 @@
           '<p class="display">' + title + '</p>' +
           '<p>' + body + '</p>' +
         '</div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
     }
 
     // Warning strings are long, free-text sentences (baked into the stored
@@ -716,9 +752,16 @@
       entities.forEach(function(e){ totalsByEntity[e.code] = 0; });
       var grandTotal = 0;
 
+      var exportHeader = ['Main Account', 'Main Account Name'].concat(entities.map(function(e){
+        return e.code + ' (' + (ccy === 'reporting' ? 'USD' : e.accountingCurrency) + ')';
+      }));
+      if (showTotals) exportHeader.push('Total (USD)');
+      var exportRows = [exportHeader];
+
       var bodyRows = shardRows.map(function(acc){
         var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
         var rowTotal = 0;
+        var exportRow = [acc.mainAccountId, acc.mainAccountName || ''];
         entities.forEach(function(e){
           var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
           var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
@@ -727,6 +770,7 @@
           var cellCls = f.cls + (adj ? ' simulated' : '');
           var cellTitle = adj ? ' title="' + escapeAttr(adj.reason) + '"' : '';
           row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
+          exportRow.push(raw === null ? null : raw);
           if (ccy === 'reporting'){
             if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
           } else {
@@ -737,28 +781,35 @@
           var ft = fmtAmount(rowTotal);
           row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
           grandTotal += rowTotal;
+          exportRow.push(rowTotal);
         } else {
           row += '<td class="col-total na">n/a</td>';
         }
+        exportRows.push(exportRow);
         row += '</tr>';
         return row;
       }).join('');
 
       var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>';
+      var exportFootRow = ['Grand Total', ''];
       entities.forEach(function(e){
         if (ccy === 'accounting'){
           footRow += '<td class="na-note">n/a</td>';
+          exportFootRow.push(null);
         } else {
           var f = fmtAmount(totalsByEntity[e.code]);
           footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+          exportFootRow.push(totalsByEntity[e.code]);
         }
       });
       if (showTotals){
         var fg = fmtAmount(grandTotal);
         footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
+        exportFootRow.push(grandTotal);
       } else {
         footRow += '<td class="col-total na">n/a</td>';
       }
+      exportRows.push(exportFootRow);
 
       reportHost.innerHTML =
         '<div class="table-card"><div class="table-scroll"><table>' +
@@ -773,6 +824,12 @@
           '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency for a consolidated total.</div>' +
           bannerHost.innerHTML;
       }
+
+      state.lastExport = {
+        rows: exportRows,
+        filename: 'ConsolidatedTB_' + (state.periodKey || 'period') + '_' + ccy + '.xlsx',
+      };
+      exportBtn.disabled = false;
     }
 
     function loadPeriod(key){
@@ -839,6 +896,11 @@
     periodSelect.addEventListener('change', function(){
       state.periodKey = periodSelect.value;
       loadPeriod(state.periodKey);
+    });
+
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'Consolidated', state.lastExport.rows, exportBtn);
     });
 
     return {
@@ -908,6 +970,43 @@
   }
 
   // ========================================================================
+  // Export to Excel -- shared by all three views. `rows` is an
+  // array-of-arrays (first row = header); values are raw numbers, not the
+  // comma/paren-formatted display strings, so the workbook is usable for
+  // real analysis (SUM, pivot, etc.) rather than a screenshot-in-a-sheet.
+  // ========================================================================
+  function exportRowsToXlsx(filename, sheetName, rows, btn){
+    if (typeof XLSX === 'undefined'){
+      window.alert('The export library did not load. Check your connection and try reopening the report.');
+      return;
+    }
+    if (!downloadsCap){
+      window.alert('Export is not available in this view.');
+      return;
+    }
+    var originalLabel = btn ? btn.textContent : null;
+    if (btn){ btn.disabled = true; btn.textContent = 'Exporting…'; }
+    try {
+      var ws = XLSX.utils.aoa_to_sheet(rows);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+      var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      var blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      downloadsCap.save({ filename: filename, data: blob })
+        .catch(function(err){
+          if (err && err.code === 'declined') return; // viewer said no -- not an error
+          window.alert('Could not save the file (' + errorText(err) + ').');
+        })
+        .then(function(){
+          if (btn){ btn.disabled = false; btn.textContent = originalLabel; }
+        });
+    } catch (e) {
+      window.alert('Could not build the export file: ' + (e && e.message || e));
+      if (btn){ btn.disabled = false; btn.textContent = originalLabel; }
+    }
+  }
+
+  // ========================================================================
   // COMPANY TB view
   // ========================================================================
   var Company = (function(){
@@ -921,6 +1020,7 @@
     var companySelect = document.getElementById('company-select');
     var periodSelect = document.getElementById('company-period-select');
     var ccyToggle = document.getElementById('company-ccy-toggle');
+    var exportBtn = document.getElementById('company-export-btn');
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -932,6 +1032,8 @@
       bannerHost.innerHTML = '';
       reportHost.innerHTML =
         '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
     }
 
     function periodLabelFromKey(key){
@@ -1010,6 +1112,7 @@
           '</tr>';
 
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var exportRows = [['Main Account', 'Main Account Name', 'Opening Balance (' + ccyLabel + ')', 'Current Month Dr (' + ccyLabel + ')', 'Current Month Cr (' + ccyLabel + ')', 'Closing Balance (' + ccyLabel + ')']];
         var bodyRows = accountIds.map(function(id){
           var isPl = parseInt(id, 10) >= 4000000;
           var openingEntry = openingByAccount[id];
@@ -1022,6 +1125,7 @@
           var closing = closingEntry ? closingEntry.value : 0;
 
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
+          exportRows.push([id, name, opening, dr, cr, closing]);
 
           var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
           return '<tr>' +
@@ -1033,6 +1137,7 @@
             '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>' +
             '</tr>';
         }).join('');
+        exportRows.push(['Grand Total', '', totals.opening, totals.dr, totals.cr, totals.closing]);
 
         var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
         var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>' +
@@ -1056,6 +1161,12 @@
 
         notesHost.hidden = false;
         setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + company + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
+
+        state.lastExport = {
+          rows: exportRows,
+          filename: 'CompanyTB_' + company + '_' + key + '_' + ccy + '.xlsx',
+        };
+        exportBtn.disabled = false;
       }).catch(function(err){
         setStatus('Could not load company TB (' + errorText(err) + ')', true);
         renderEmpty('Could not load data', 'Failed to load ' + company + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
@@ -1086,6 +1197,11 @@
       state.ccy = btn.getAttribute('data-ccy');
       Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){ b.classList.toggle('active', b === btn); });
       render();
+    });
+
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'Company TB', state.lastExport.rows, exportBtn);
     });
 
     return {
@@ -1124,6 +1240,7 @@
     var companySelect = document.getElementById('currency-company-select');
     var periodSelect = document.getElementById('currency-period-select');
     var ccyToggle = document.getElementById('currency-ccy-toggle');
+    var exportBtn = document.getElementById('currency-export-btn');
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -1134,6 +1251,8 @@
       notesHost.hidden = true;
       bannerHost.innerHTML = '';
       reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
     }
 
     function periodLabelFromKey(key){
@@ -1223,6 +1342,7 @@
           '</tr>';
 
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var exportRows = [['Main Account', 'Main Account Name', 'Txn Ccy', 'Opening Balance (' + ccyLabel + ')', 'Current Month Dr (' + ccyLabel + ')', 'Current Month Cr (' + ccyLabel + ')', 'Closing Balance (' + ccyLabel + ')']];
         var bodyRows = keys.map(function(k){
           var closingEntry = closingByKey[k];
           var openingEntry = openingByKey[k];
@@ -1237,6 +1357,7 @@
           var closing = closingEntry ? closingEntry.value : 0;
 
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
+          exportRows.push([account, name, txnCcy, opening, dr, cr, closing]);
 
           var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
           return '<tr>' +
@@ -1249,6 +1370,7 @@
             '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>' +
             '</tr>';
         }).join('');
+        exportRows.push(['Grand Total', '', '', totals.opening, totals.dr, totals.cr, totals.closing]);
 
         var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
         var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-ccy"></td>' +
@@ -1272,6 +1394,12 @@
 
         notesHost.hidden = false;
         setStatus('FY' + cur.doc.fiscalYear + ' P' + cur.doc.period + ' · ' + company + ' · ' + keys.length + ' rows', false);
+
+        state.lastExport = {
+          rows: exportRows,
+          filename: 'ByCurrency_' + company + '_' + key + '_' + ccy + '.xlsx',
+        };
+        exportBtn.disabled = false;
       }).catch(function(err){
         setStatus('Could not load currency breakdown (' + errorText(err) + ')', true);
         renderEmpty('Could not load data', 'Failed to load ' + company + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
@@ -1302,6 +1430,11 @@
       state.ccy = btn.getAttribute('data-ccy');
       Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){ b.classList.toggle('active', b === btn); });
       render();
+    });
+
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'By Currency', state.lastExport.rows, exportBtn);
     });
 
     return {
@@ -1350,6 +1483,11 @@
   }
 
   (async function init(){
+    try{
+      downloadsCap = await window.claude.use('downloads');
+    } catch (e){
+      downloadsCap = null;
+    }
     try{
       db = await window.claude.use('db');
     } catch (e){
