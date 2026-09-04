@@ -326,6 +326,48 @@ input — the query has already been validated to balance exactly for 14 of
 16 entities, so these four are genuine open questions about the underlying
 data, not query bugs.
 
+## HBUS: entire balance sheet nets to $0.00 as of Dec 2025 (real, not a bug)
+
+**Report owner asked (2026-09-04) whether this was a mistake in how CLG
+vouchers are handled.** It is not — traced live to a specific, real GL
+posting:
+
+- Every one of HBUS's ~66 non-zero Balance Sheet accounts as of Nov 2025
+  (cash, AR, AP, inventory, provisions, tax, inter-unit balances — not just
+  Retained Earnings) is **exactly** 0.00 as of Dec 2025. Verified per-account,
+  not just in aggregate: zero accounts differ once the closing voucher below
+  is included.
+- Cause: journal `HBUS-GEN-2326441`, `subledgervoucher = 'clgus25v1'`
+  (i.e. **CLG**, **US**, FY**25**), dated `accountingdate = 2025-12-31` but
+  actually **created 2026-07-31** — posted about seven months late.
+  14,729 lines, net **-7,801,838.26**, which exactly offsets HBUS's entire
+  pre-existing cumulative Balance Sheet position (+7,801,838.26 from every
+  other posting in HBUS's history) to zero. This is a full entity
+  wind-down/closure entry, not an ordinary year-end "sweep P&L into Retained
+  Earnings" close like other entities get (those only move Retained
+  Earnings; this one zeroes AR, AP, inventory, cash, everything).
+- This is correctly **included**, per Finding #3 above (no CLG exclusion
+  anywhere) — excluding it would be the actual mistake, since it would show
+  a stale, no-longer-true balance sheet for an entity whose books were
+  closed. Confirmed by recomputing the same cumulative total with this one
+  journal excluded: HBUS's "real" position reappears as +7,801,838.26 net.
+- One data-quality curiosity spotted along the way, not requiring any query
+  change: within that same voucher, account `1112011` (HSBC – CAD account)
+  has only 6 lines but a **gross** (sum of absolute values) of ~113.5
+  billion that nets to exactly 0.00 — some kind of technical offsetting
+  pair with no economic effect. Harmless to the balance, but worth a
+  finance/IT sanity check on why the closing batch generates lines of that
+  magnitude.
+- **Not yet confirmed with finance**: whether HBUS was deliberately wound
+  down / liquidated / consolidated into another entity as of FY2025
+  year-end. The report is accurately reflecting whatever was posted; it
+  cannot confirm the business reason behind it.
+- The report's own footer previously said "CLG year-end closing vouchers"
+  were **excluded** — leftover text from before the 2026-09-04 fix, and the
+  opposite of the query's actual (correct) behavior. Fixed the same day
+  this was traced, since it's exactly the kind of wording that would make a
+  viewer suspect this bug where none exists.
+
 ## Business rules baked into the query (confirmed with the report owner)
 
 - **Balance Sheet** (`mainaccountid` 1,000,000–3,999,999): cumulative from
