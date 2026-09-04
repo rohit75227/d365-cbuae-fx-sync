@@ -24,6 +24,9 @@
     --warn-bg: #FCEFD8;
     --warn-border: #E8B95B;
     --warn-text: #6b4a10;
+    --good-bg: #E4F3E8;
+    --good-border: #9BCEA9;
+    --good-text: #235c34;
     --shadow: 0 1px 2px rgba(26,26,26,.06), 0 8px 24px -12px rgba(26,26,26,.18);
   }
 
@@ -44,6 +47,9 @@
       --warn-bg: #3d2f14;
       --warn-border: #8a691f;
       --warn-text: #f0d18c;
+      --good-bg: #16321f;
+      --good-border: #2f6b42;
+      --good-text: #a9e0b8;
       --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
     }
   }
@@ -63,6 +69,9 @@
     --warn-bg: #3d2f14;
     --warn-border: #8a691f;
     --warn-text: #f0d18c;
+    --good-bg: #16321f;
+    --good-border: #2f6b42;
+    --good-text: #a9e0b8;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
   }
 
@@ -87,7 +96,7 @@
   }
 
   header.masthead{
-    background:var(--accent);
+    background:linear-gradient(120deg, var(--accent) 0%, var(--hb-pink-ink) 130%);
     color:#fff;
     padding:22px clamp(16px,3vw,40px) 20px;
     display:flex;
@@ -111,6 +120,36 @@
     opacity:.9;
     white-space:nowrap;
   }
+
+  nav.view-tabs{
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    padding:0 clamp(16px,3vw,40px);
+    display:flex;
+    gap:4px;
+    overflow-x:auto;
+  }
+  nav.view-tabs button{
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:var(--text-dim);
+    font:inherit;
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    font-size:13px;
+    padding:14px 18px 12px;
+    border-bottom:3px solid transparent;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  nav.view-tabs button.active{
+    color:var(--text);
+    border-bottom-color:var(--accent);
+  }
+  nav.view-tabs button:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
 
   .controls{
     background:var(--surface-2);
@@ -180,6 +219,7 @@
   .status-dot.stale{ background:var(--hb-nude); }
 
   main{ padding:20px clamp(16px,3vw,40px) 48px; }
+  .view-panel[hidden]{ display:none; }
 
   .banner{
     display:flex;
@@ -199,11 +239,41 @@
     border-color:var(--total-row-border);
     color:var(--text);
   }
+  .banner.good{
+    background:var(--good-bg);
+    border-color:var(--good-border);
+    color:var(--good-text);
+  }
+  .banner.info{
+    background:var(--surface);
+    border-color:var(--border);
+    color:var(--text-dim);
+  }
   td.simulated{
     background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(237,59,134,.12) 6px, rgba(237,59,134,.12) 12px);
     border-bottom:2px dashed var(--accent) !important;
     cursor:help;
   }
+
+  .card-row{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+  .stat-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:12px;
+    box-shadow:var(--shadow);
+    padding:14px 18px;
+    min-width:160px;
+    flex:1 1 160px;
+  }
+  .stat-card .eyebrow{ color:var(--text-dim); }
+  .stat-card .stat-value{
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    font-size:22px;
+    font-weight:700;
+    margin-top:4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-card .stat-value.neg{ color:#b8264f; }
 
   .table-card{
     background:var(--surface);
@@ -240,7 +310,7 @@
     white-space:nowrap;
     border-bottom:1px solid var(--border);
   }
-  thead th.col-account, thead th.col-name{ text-align:left; }
+  thead th.col-account, thead th.col-name, thead th.col-ccy{ text-align:left; }
   thead th .ccy-tag{
     display:block;
     font-weight:400;
@@ -251,6 +321,8 @@
   }
   thead th.col-account{ left:0; z-index:4; min-width:96px; }
   thead th.col-name{ left:96px; z-index:4; min-width:220px; }
+  thead th.col-name.with-ccy{ left:96px; }
+  thead th.col-ccy{ min-width:64px; }
 
   tbody td{
     padding:9px 14px;
@@ -259,7 +331,7 @@
     border-bottom:1px solid var(--border);
     color:var(--text);
   }
-  tbody td.col-account, tbody td.col-name{
+  tbody td.col-account, tbody td.col-name, tbody td.col-ccy{
     text-align:left;
     position:sticky;
     background:var(--surface);
@@ -267,10 +339,11 @@
   }
   tbody td.col-account{ left:0; font-weight:700; min-width:96px; }
   tbody td.col-name{ left:96px; min-width:220px; color:var(--text-dim); }
+  tbody td.col-ccy{ font-weight:700; color:var(--accent); min-width:64px; }
   tbody tr:nth-child(even) td{ background-color:var(--surface-2); }
-  tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name{ background-color:var(--surface-2); }
+  tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name, tbody tr:nth-child(even) td.col-ccy{ background-color:var(--surface-2); }
   tbody tr:hover td{ background-color:var(--total-row-bg); }
-  tbody tr:hover td.col-account, tbody tr:hover td.col-name{ background-color:var(--total-row-bg); }
+  tbody tr:hover td.col-account, tbody tr:hover td.col-name, tbody tr:hover td.col-ccy{ background-color:var(--total-row-bg); }
 
   td.neg{ color:#b8264f; }
   td.zero{ color:var(--text-dim); }
@@ -345,75 +418,132 @@
   <div class="wordmark">Huda Beauty</div>
 </header>
 
-<div class="controls">
-  <div class="control-group">
-    <span class="eyebrow">Currency</span>
-    <div class="segmented" id="ccy-toggle" role="group" aria-label="Currency basis">
-      <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
-      <button type="button" data-ccy="accounting">Accounting</button>
+<nav class="view-tabs" id="view-tabs" role="tablist" aria-label="Report view">
+  <button type="button" data-view="consolidated" class="active" role="tab" aria-selected="true">Consolidated</button>
+  <button type="button" data-view="company" role="tab" aria-selected="false">Company TB</button>
+  <button type="button" data-view="currency" role="tab" aria-selected="false">By Currency</button>
+</nav>
+
+<!-- ============================== CONSOLIDATED ============================== -->
+<div class="view-panel" id="panel-consolidated">
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">Currency</span>
+      <div class="segmented" id="ccy-toggle" role="group" aria-label="Currency basis">
+        <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
+        <button type="button" data-ccy="accounting">Accounting</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Period</span>
+      <select id="period-select" aria-label="Fiscal year and period"></select>
+    </div>
+    <div class="status-pill">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Connecting&hellip;</span>
     </div>
   </div>
-  <div class="control-group">
-    <span class="eyebrow">Period</span>
-    <select id="period-select" aria-label="Fiscal year and period"></select>
-  </div>
-  <div class="status-pill">
-    <span class="status-dot" id="status-dot"></span>
-    <span id="status-text">Connecting&hellip;</span>
-  </div>
+  <main>
+    <div id="banner-host"></div>
+    <div id="report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>Source: <code>hb_catalog.db_bronze_d365</code> &middot; refreshed daily from Databricks</span>
+      <span>Excludes all entities with a code containing &ldquo;KY&rdquo; and CLG year-end closing vouchers</span>
+      <span>HBBV / HBFM reporting-currency amounts fall back to accounting currency (USD)</span>
+      <span>† marks a cell with a simulated, not-yet-posted adjustment — hover the cell for details</span>
+    </footer>
+  </main>
 </div>
 
-<main>
-  <div id="banner-host"></div>
-  <div id="report-host">
-    <div class="empty-state">
-      <p class="display">Loading</p>
-      <p>Connecting to the report database&hellip;</p>
+<!-- ============================== COMPANY TB ============================== -->
+<div class="view-panel" id="panel-company" hidden>
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">Company</span>
+      <select id="company-select" aria-label="Company"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Period</span>
+      <select id="company-period-select" aria-label="Fiscal year and period"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Currency</span>
+      <div class="segmented" id="company-ccy-toggle" role="group" aria-label="Currency basis">
+        <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
+        <button type="button" data-ccy="accounting">Accounting</button>
+      </div>
+    </div>
+    <div class="status-pill">
+      <span class="status-dot" id="company-status-dot"></span>
+      <span id="company-status-text">Connecting&hellip;</span>
     </div>
   </div>
-  <footer class="notes" id="notes-host" hidden>
-    <span class="wordmark">Huda Beauty</span>
-    <span>Source: <code>hb_catalog.db_bronze_d365</code> &middot; refreshed daily from Databricks</span>
-    <span>Excludes all entities with a code containing &ldquo;KY&rdquo; and CLG year-end closing vouchers</span>
-    <span>HBBV / HBFM reporting-currency amounts fall back to accounting currency (USD)</span>
-    <span>† marks a cell with a simulated, not-yet-posted adjustment — hover the cell for details</span>
-  </footer>
-</main>
+  <main>
+    <div id="company-banner-host"></div>
+    <div id="company-report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="company-notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>Opening Balance is the prior period&rsquo;s Closing Balance (Balance Sheet carries forward; P&amp;L resets to zero each January)</span>
+      <span>Current Month Dr / Cr is that account&rsquo;s raw debit / credit movement for the selected month only</span>
+      <span>Movement figures do not include simulated, not-yet-posted adjustments &mdash; those only appear on the Consolidated view&rsquo;s Closing Balance</span>
+    </footer>
+  </main>
+</div>
+
+<!-- ============================== BY CURRENCY ============================== -->
+<div class="view-panel" id="panel-currency" hidden>
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">Currency Basis</span>
+      <div class="segmented" id="currency-ccy-toggle" role="group" aria-label="Currency basis">
+        <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
+        <button type="button" data-ccy="accounting">Accounting</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Period</span>
+      <select id="currency-period-select" aria-label="Fiscal year and period"></select>
+    </div>
+    <div class="status-pill">
+      <span class="status-dot" id="currency-status-dot"></span>
+      <span id="currency-status-text">Connecting&hellip;</span>
+    </div>
+  </div>
+  <main>
+    <div id="currency-banner-host">
+      <div class="banner info"><strong>By Currency:</strong>&nbsp;the same Closing Balance as the Consolidated view, split into one row per main account per original posting (transaction) currency.</div>
+    </div>
+    <div id="currency-report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="currency-notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>&ldquo;???&rdquo; is the transaction-currency bucket for the small number of lines with no recorded transaction currency</span>
+      <span>Does not include simulated, not-yet-posted adjustments</span>
+    </footer>
+  </main>
+</div>
 
 <script>
 (function(){
   'use strict';
 
-  var state = {
-    db: null,
-    index: null,
-    periodKey: null,
-    ccy: 'reporting',
-    unsubPeriod: null,
-    currentPeriodDoc: null,
-  };
-
-  var statusDot = document.getElementById('status-dot');
-  var statusText = document.getElementById('status-text');
-  var reportHost = document.getElementById('report-host');
-  var bannerHost = document.getElementById('banner-host');
-  var notesHost = document.getElementById('notes-host');
-  var periodSelect = document.getElementById('period-select');
-  var ccyToggle = document.getElementById('ccy-toggle');
-
-  function setStatus(text, stale){
-    statusText.textContent = text;
-    statusDot.classList.toggle('stale', !!stale);
-  }
-
-  function renderEmpty(title, body){
-    notesHost.hidden = true;
-    reportHost.innerHTML =
-      '<div class="empty-state">' +
-        '<p class="display">' + title + '</p>' +
-        '<p>' + body + '</p>' +
-      '</div>';
-  }
+  var db = null;
+  var index = null; // sorted period list, shared across views
 
   function fmtAmount(value){
     if (value === null || value === undefined) return { text: '–', cls: 'zero' };
@@ -430,204 +560,673 @@
     return m + ' ' + p.fiscalYear + ' · FY' + p.fiscalYear + ' P' + p.period;
   }
 
-  function renderBanner(warnings){
-    warnings = warnings || [];
-    var simulated = warnings.filter(function(w){ return w.indexOf('SIMULATED') !== -1; });
-    var real = warnings.filter(function(w){ return w.indexOf('SIMULATED') === -1; });
-    var html = '';
-    if (real.length){
-      html += '<div class="banner"><strong>Control-total check:</strong>&nbsp;' +
-        real.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
-        '</div>';
-    }
-    if (simulated.length){
-      html += '<div class="banner simulated"><strong>Includes simulated, not-yet-posted adjustments:</strong>&nbsp;' +
-        simulated.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
-        ' &mdash; the affected cells below are marked with a diagonal pattern.</div>';
-    }
-    bannerHost.innerHTML = html;
-  }
-
   function escapeHtml(s){
     var d = document.createElement('div');
-    d.textContent = s;
+    d.textContent = s == null ? '' : s;
     return d.innerHTML;
   }
 
-  function renderTable(periodDoc, shardRows){
-    var entities = periodDoc.entities || [];
-    var ccy = state.ccy;
-    var showTotals = ccy === 'reporting';
+  function prevPeriodKey(key){
+    var parts = key.split('-');
+    var y = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+    m -= 1;
+    if (m < 1) { m = 12; y -= 1; }
+    return y + '-' + (m < 10 ? '0' + m : m);
+  }
 
-    var simulatedMap = {};
-    (periodDoc.simulatedAdjustments || []).forEach(function(adj){
-      simulatedMap[adj.mainAccountId + '|' + adj.entity] = adj;
+  // ========================================================================
+  // Tabs
+  // ========================================================================
+  var viewTabs = document.getElementById('view-tabs');
+  var panels = {
+    consolidated: document.getElementById('panel-consolidated'),
+    company: document.getElementById('panel-company'),
+    currency: document.getElementById('panel-currency'),
+  };
+  var initedViews = {};
+  var pendingInits = []; // views requested before `index` was ready
+
+  function ensureViewInited(view){
+    if (initedViews[view]) return;
+    if (!db || !index){ // not ready yet -- try again once the index snapshot arrives
+      if (pendingInits.indexOf(view) === -1) pendingInits.push(view);
+      return;
+    }
+    initedViews[view] = true;
+    if (view === 'company') Company.init();
+    if (view === 'currency') Currency.init();
+  }
+
+  function flushPendingInits(){
+    var toInit = pendingInits;
+    pendingInits = [];
+    toInit.forEach(ensureViewInited);
+  }
+
+  viewTabs.addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-view]');
+    if (!btn) return;
+    var view = btn.getAttribute('data-view');
+    Array.prototype.forEach.call(viewTabs.querySelectorAll('button'), function(b){
+      var active = b === btn;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
     });
+    Object.keys(panels).forEach(function(k){ panels[k].hidden = (k !== view); });
+    ensureViewInited(view);
+  });
 
-    var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
-    entities.forEach(function(e){
-      var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
-      thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
-    });
-    thead += showTotals
-      ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
-      : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
-    thead += '</tr>';
+  // ========================================================================
+  // CONSOLIDATED view
+  // ========================================================================
+  var Consolidated = (function(){
+    var state = { periodKey: null, ccy: 'reporting', unsubPeriod: null, currentPeriodDoc: null };
 
-    var totalsByEntity = {};
-    entities.forEach(function(e){ totalsByEntity[e.code] = 0; });
-    var grandTotal = 0;
+    var statusDot = document.getElementById('status-dot');
+    var statusText = document.getElementById('status-text');
+    var reportHost = document.getElementById('report-host');
+    var bannerHost = document.getElementById('banner-host');
+    var notesHost = document.getElementById('notes-host');
+    var periodSelect = document.getElementById('period-select');
+    var ccyToggle = document.getElementById('ccy-toggle');
 
-    var bodyRows = shardRows.map(function(acc){
-      var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
-      var rowTotal = 0;
-      var rowHasReporting = true;
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      reportHost.innerHTML =
+        '<div class="empty-state">' +
+          '<p class="display">' + title + '</p>' +
+          '<p>' + body + '</p>' +
+        '</div>';
+    }
+
+    function renderBanner(warnings){
+      warnings = warnings || [];
+      var simulated = warnings.filter(function(w){ return w.indexOf('SIMULATED') !== -1; });
+      var real = warnings.filter(function(w){ return w.indexOf('SIMULATED') === -1; });
+      var html = '';
+      if (real.length){
+        html += '<div class="banner"><strong>Control-total check:</strong>&nbsp;' +
+          real.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
+          '</div>';
+      }
+      if (simulated.length){
+        html += '<div class="banner simulated"><strong>Includes simulated, not-yet-posted adjustments:</strong>&nbsp;' +
+          simulated.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
+          ' &mdash; the affected cells below are marked with a diagonal pattern.</div>';
+      }
+      if (!real.length && !simulated.length){
+        html += '<div class="banner good"><strong>Every entity nets to zero.</strong>&nbsp;No control-total exceptions for this period.</div>';
+      }
+      bannerHost.innerHTML = html;
+    }
+
+    function renderTable(periodDoc, shardRows){
+      var entities = periodDoc.entities || [];
+      var ccy = state.ccy;
+      var showTotals = ccy === 'reporting';
+
+      var simulatedMap = {};
+      (periodDoc.simulatedAdjustments || []).forEach(function(adj){
+        simulatedMap[adj.mainAccountId + '|' + adj.entity] = adj;
+      });
+
+      var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
       entities.forEach(function(e){
-        var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
-        var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
-        if (ccy === 'reporting' && raw === null && cell) raw = null;
-        var f = fmtAmount(raw);
-        var adj = simulatedMap[acc.mainAccountId + '|' + e.code];
-        var cellCls = f.cls + (adj ? ' simulated' : '');
-        var cellTitle = adj ? ' title="' + escapeHtml(adj.reason) + '"' : '';
-        row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
-        if (ccy === 'reporting'){
-          if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
+        var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
+        thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
+      });
+      thead += showTotals
+        ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
+        : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
+      thead += '</tr>';
+
+      var totalsByEntity = {};
+      entities.forEach(function(e){ totalsByEntity[e.code] = 0; });
+      var grandTotal = 0;
+
+      var bodyRows = shardRows.map(function(acc){
+        var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
+        var rowTotal = 0;
+        entities.forEach(function(e){
+          var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
+          var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
+          var f = fmtAmount(raw);
+          var adj = simulatedMap[acc.mainAccountId + '|' + e.code];
+          var cellCls = f.cls + (adj ? ' simulated' : '');
+          var cellTitle = adj ? ' title="' + escapeHtml(adj.reason) + '"' : '';
+          row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
+          if (ccy === 'reporting'){
+            if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
+          } else {
+            if (raw !== null){ totalsByEntity[e.code] += raw; }
+          }
+        });
+        if (showTotals){
+          var ft = fmtAmount(rowTotal);
+          row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
+          grandTotal += rowTotal;
         } else {
-          if (raw !== null){ totalsByEntity[e.code] += raw; }
+          row += '<td class="col-total na">n/a</td>';
+        }
+        row += '</tr>';
+        return row;
+      }).join('');
+
+      var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>';
+      entities.forEach(function(e){
+        if (ccy === 'accounting'){
+          footRow += '<td class="na-note">n/a</td>';
+        } else {
+          var f = fmtAmount(totalsByEntity[e.code]);
+          footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
         }
       });
       if (showTotals){
-        var ft = fmtAmount(rowTotal);
-        row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
-        grandTotal += rowTotal;
+        var fg = fmtAmount(grandTotal);
+        footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
       } else {
-        row += '<td class="col-total na">n/a</td>';
+        footRow += '<td class="col-total na">n/a</td>';
       }
-      row += '</tr>';
-      return row;
-    }).join('');
 
-    var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>';
-    entities.forEach(function(e){
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+        '</table></div></div>';
+
+      notesHost.hidden = false;
       if (ccy === 'accounting'){
-        footRow += '<td class="na-note">n/a</td>';
-      } else {
-        var f = fmtAmount(totalsByEntity[e.code]);
-        footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+        bannerHost.innerHTML =
+          '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency for a consolidated total.</div>' +
+          bannerHost.innerHTML;
       }
-    });
-    if (showTotals){
-      var fg = fmtAmount(grandTotal);
-      footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
-    } else {
-      footRow += '<td class="col-total na">n/a</td>';
     }
 
-    reportHost.innerHTML =
-      '<div class="table-card"><div class="table-scroll"><table>' +
-        '<thead>' + thead + '</thead>' +
-        '<tbody>' + bodyRows + '</tbody>' +
-        '<tfoot><tr>' + footRow + '</tr></tfoot>' +
-      '</table></div></div>';
+    function loadPeriod(key){
+      if (!db || !key) return;
+      if (state.unsubPeriod) { state.unsubPeriod(); state.unsubPeriod = null; }
 
-    notesHost.hidden = false;
-    if (ccy === 'accounting'){
-      bannerHost.innerHTML =
-        '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency for a consolidated total.</div>' +
-        bannerHost.innerHTML;
-    }
-  }
+      setStatus('Loading ' + key + '…');
+      var periodDocRef = db.doc('tb/' + key);
 
-  function loadPeriod(key){
-    if (!state.db || !key) return;
-    if (state.unsubPeriod) { state.unsubPeriod(); state.unsubPeriod = null; }
+      state.unsubPeriod = periodDocRef.onSnapshot(function(snap){
+        if (!snap.exists){
+          renderEmpty('No data for this period', 'The sync job has not produced a snapshot for <code>' + key + '</code> yet.');
+          return;
+        }
+        var doc = snap.data();
+        state.currentPeriodDoc = doc;
+        renderBanner(doc.warnings);
 
-    setStatus('Loading ' + key + '…');
-    var periodDocRef = state.db.doc('tb/' + key);
-
-    state.unsubPeriod = periodDocRef.onSnapshot(function(snap){
-      if (!snap.exists){
-        renderEmpty('No data for this period', 'The sync job has not produced a snapshot for <code>' + key + '</code> yet.');
-        return;
-      }
-      var doc = snap.data();
-      state.currentPeriodDoc = doc;
-      renderBanner(doc.warnings);
-
-      var shardCount = doc.shardCount || 0;
-      var shardPromises = [];
-      for (var i = 0; i < shardCount; i++){
-        shardPromises.push(state.db.doc('tb/' + key + '/shards/' + i).get());
-      }
-      Promise.all(shardPromises).then(function(snaps){
-        var rows = [];
-        snaps.forEach(function(s){
-          if (s.exists && s.data().rows) rows = rows.concat(s.data().rows);
+        var shardCount = doc.shardCount || 0;
+        var shardPromises = [];
+        for (var i = 0; i < shardCount; i++){
+          shardPromises.push(db.doc('tb/' + key + '/shards/' + i).get());
+        }
+        Promise.all(shardPromises).then(function(snaps){
+          var rows = [];
+          snaps.forEach(function(s){
+            if (s.exists && s.data().rows) rows = rows.concat(s.data().rows);
+          });
+          renderTable(doc, rows);
+          setStatus('Synced ' + new Date(doc.generatedAt).toLocaleString() + ' · FY' + doc.fiscalYear + ' P' + doc.period, false);
+        }).catch(function(err){
+          setStatus('Could not load report rows (' + (err && err.code || 'error') + ')', true);
         });
-        renderTable(doc, rows);
-        setStatus('Synced ' + new Date(doc.generatedAt).toLocaleString() + ' · FY' + doc.fiscalYear + ' P' + doc.period, false);
-      }).catch(function(err){
-        setStatus('Could not load report rows (' + (err && err.code || 'error') + ')', true);
+      }, function(err){
+        setStatus('Database error: ' + err.code, true);
       });
-    }, function(err){
-      setStatus('Database error: ' + err.code, true);
-    });
-  }
+    }
 
-  function loadIndex(){
-    var indexRef = state.db.doc('tb/index');
-    indexRef.onSnapshot(function(snap){
-      if (!snap.exists || !snap.data().periods || !snap.data().periods.length){
-        renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet. The daily Databricks sync writes here automatically once it has run &mdash; this page updates itself, no reload needed.');
-        setStatus('No data yet', true);
-        return;
-      }
-      var periods = snap.data().periods.slice().sort(function(a,b){
-        return (b.fiscalYear - a.fiscalYear) || (b.period - a.period);
-      });
-      state.index = periods;
+    function populatePeriods(){
       var prevSelection = periodSelect.value;
-      periodSelect.innerHTML = periods.map(function(p){
+      periodSelect.innerHTML = index.map(function(p){
         return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
       }).join('');
-      var toSelect = periods.some(function(p){ return p.key === prevSelection; }) ? prevSelection : periods[0].key;
+      var toSelect = index.some(function(p){ return p.key === prevSelection; }) ? prevSelection : index[0].key;
       periodSelect.value = toSelect;
       if (toSelect !== state.periodKey){
         state.periodKey = toSelect;
         loadPeriod(toSelect);
       }
-    }, function(err){
-      setStatus('Database error: ' + err.code, true);
+    }
+
+    ccyToggle.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-ccy]');
+      if (!btn) return;
+      state.ccy = btn.getAttribute('data-ccy');
+      Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      if (state.currentPeriodDoc && state.periodKey){
+        loadPeriod(state.periodKey);
+      }
+    });
+
+    periodSelect.addEventListener('change', function(){
+      state.periodKey = periodSelect.value;
+      loadPeriod(state.periodKey);
+    });
+
+    return {
+      onIndexReady: function(){ populatePeriods(); },
+      onNoData: function(){
+        renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet. The daily Databricks sync writes here automatically once it has run &mdash; this page updates itself, no reload needed.');
+        setStatus('No data yet', true);
+      },
+      onDbUnavailable: function(){
+        renderEmpty('Report database unavailable', 'This view could not connect to the report’s data store. Try reopening the report, or contact Business Solutions if this persists.');
+        setStatus('Unavailable', true);
+      },
+    };
+  })();
+
+  // ========================================================================
+  // COMPANY TB view
+  // ========================================================================
+  var Company = (function(){
+    var state = { company: null, periodKey: null, ccy: 'reporting', inited: false };
+
+    var statusDot = document.getElementById('company-status-dot');
+    var statusText = document.getElementById('company-status-text');
+    var reportHost = document.getElementById('company-report-host');
+    var bannerHost = document.getElementById('company-banner-host');
+    var notesHost = document.getElementById('company-notes-host');
+    var companySelect = document.getElementById('company-select');
+    var periodSelect = document.getElementById('company-period-select');
+    var ccyToggle = document.getElementById('company-ccy-toggle');
+
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      reportHost.innerHTML =
+        '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+    }
+
+    function loadShardedAccounts(key){
+      return db.doc('tb/' + key).get().then(function(snap){
+        if (!snap.exists) return null;
+        var doc = snap.data();
+        var shardCount = doc.shardCount || 0;
+        var promises = [];
+        for (var i = 0; i < shardCount; i++) promises.push(db.doc('tb/' + key + '/shards/' + i).get());
+        return Promise.all(promises).then(function(snaps){
+          var rows = [];
+          snaps.forEach(function(s){ if (s.exists && s.data().rows) rows = rows.concat(s.data().rows); });
+          return { doc: doc, rows: rows };
+        });
+      });
+    }
+
+    function loadMovement(key){
+      return db.doc('movement/' + key).get().then(function(snap){
+        if (!snap.exists) return [];
+        var doc = snap.data();
+        var shardCount = doc.shardCount || 0;
+        var promises = [];
+        for (var i = 0; i < shardCount; i++) promises.push(db.doc('movement/' + key + '/shards/' + i).get());
+        return Promise.all(promises).then(function(snaps){
+          var rows = [];
+          snaps.forEach(function(s){ if (s.exists && s.data().rows) rows = rows.concat(s.data().rows); });
+          return rows;
+        });
+      });
+    }
+
+    function render(){
+      var company = state.company, key = state.periodKey, ccy = state.ccy;
+      if (!company || !key) return;
+
+      setStatus('Loading ' + company + ' · ' + key + '…');
+      var prevKey = prevPeriodKey(key);
+
+      Promise.all([
+        loadShardedAccounts(key),
+        loadShardedAccounts(prevKey),
+        loadMovement(key),
+      ]).then(function(results){
+        var cur = results[0], prev = results[1], movement = results[2];
+        if (!cur){
+          renderEmpty('No data for this period', 'The sync job has not produced a snapshot for <code>' + key + '</code> yet.');
+          return;
+        }
+
+        var entityMeta = (cur.doc.entities || []).filter(function(e){ return e.code === company; })[0];
+        var ccyLabel = ccy === 'reporting' ? 'USD' : (entityMeta ? entityMeta.accountingCurrency : '');
+
+        var closingByAccount = {};
+        cur.rows.forEach(function(acc){
+          var cell = acc.byEntity && acc.byEntity[company];
+          if (!cell) return;
+          closingByAccount[acc.mainAccountId] = {
+            name: acc.mainAccountName,
+            value: ccy === 'reporting' ? cell.reporting : cell.accounting,
+          };
+        });
+        var openingByAccount = {};
+        if (prev){
+          prev.rows.forEach(function(acc){
+            var cell = acc.byEntity && acc.byEntity[company];
+            if (!cell) return;
+            openingByAccount[acc.mainAccountId] = ccy === 'reporting' ? cell.reporting : cell.accounting;
+          });
+        }
+        var movementByAccount = {};
+        movement.filter(function(m){ return m.entity === company; }).forEach(function(m){
+          movementByAccount[m.mainAccountId] = m;
+        });
+
+        var accountIds = Object.keys(closingByAccount).sort();
+        if (!accountIds.length){
+          renderEmpty('No activity', company + ' has no balances for ' + key + '.');
+          return;
+        }
+
+        var thead = '<tr>' +
+          '<th class="col-account">Main Account</th>' +
+          '<th class="col-name">Main Account Name</th>' +
+          '<th>Opening Balance<span class="ccy-tag">' + ccyLabel + '</span></th>' +
+          '<th>Current Month Dr<span class="ccy-tag">' + ccyLabel + '</span></th>' +
+          '<th>Current Month Cr<span class="ccy-tag">' + ccyLabel + '</span></th>' +
+          '<th class="col-total">Closing Balance<span class="ccy-tag">' + ccyLabel + '</span></th>' +
+          '</tr>';
+
+        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var bodyRows = accountIds.map(function(id){
+          var isPl = parseInt(id, 10) >= 4000000;
+          var opening = (isPl && cur.doc.period === 1) ? 0 : (openingByAccount[id] || 0);
+          var m = movementByAccount[id];
+          var dr = m ? (ccy === 'reporting' ? m.debitReporting : m.debitAccounting) : 0;
+          var cr = m ? (ccy === 'reporting' ? m.creditReporting : m.creditAccounting) : 0;
+          var closing = closingByAccount[id].value;
+
+          totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
+
+          var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
+          return '<tr>' +
+            '<td class="col-account">' + escapeHtml(id) + '</td>' +
+            '<td class="col-name">' + escapeHtml(closingByAccount[id].name || '') + '</td>' +
+            '<td class="' + fo.cls + '">' + fo.text + '</td>' +
+            '<td class="' + fd.cls + '">' + fd.text + '</td>' +
+            '<td class="' + fc.cls + '">' + fc.text + '</td>' +
+            '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>' +
+            '</tr>';
+        }).join('');
+
+        var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
+        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>' +
+          '<td class="' + fo.cls + '">' + fo.text + '</td>' +
+          '<td class="' + fd.cls + '">' + fd.text + '</td>' +
+          '<td class="' + fc.cls + '">' + fc.text + '</td>' +
+          '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
+
+        reportHost.innerHTML =
+          '<div class="table-card"><div class="table-scroll"><table>' +
+            '<thead>' + thead + '</thead>' +
+            '<tbody>' + bodyRows + '</tbody>' +
+            '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+          '</table></div></div>';
+
+        var netMovement = totals.dr - totals.cr;
+        var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
+        bannerHost.innerHTML = reconciles
+          ? '<div class="banner good"><strong>Reconciles:</strong>&nbsp;Opening + Dr &minus; Cr = Closing for ' + company + ', ' + periodLabelFromKey(key) + '.</div>'
+          : '<div class="banner"><strong>Note:</strong>&nbsp;Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.</div>';
+
+        notesHost.hidden = false;
+        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + company + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
+      }).catch(function(err){
+        setStatus('Could not load company TB (' + (err && err.code || 'error') + ')', true);
+      });
+    }
+
+    function periodLabelFromKey(key){
+      var found = (index || []).filter(function(p){ return p.key === key; })[0];
+      return found ? periodLabel(found) : key;
+    }
+
+    function populate(){
+      var latest = index[0];
+      var entities = (latest && latest.entities) || [];
+      companySelect.innerHTML = entities.map(function(e){
+        return '<option value="' + e.code + '">' + e.code + '</option>';
+      }).join('');
+      if (!state.company && entities.length) state.company = entities[0].code;
+      companySelect.value = state.company;
+
+      periodSelect.innerHTML = index.map(function(p){
+        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
+      }).join('');
+      if (!state.periodKey) state.periodKey = index[0].key;
+      periodSelect.value = state.periodKey;
+
+      render();
+    }
+
+    companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
+    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
+    ccyToggle.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-ccy]');
+      if (!btn) return;
+      state.ccy = btn.getAttribute('data-ccy');
+      Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){ b.classList.toggle('active', b === btn); });
+      render();
+    });
+
+    return {
+      init: function(){
+        if (!index || !index.length){
+          renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet.');
+          setStatus('No data yet', true);
+          return;
+        }
+        // index entries don't carry `entities` by default -- fetch the latest tb doc once for the roster
+        db.doc('tb/' + index[0].key).get().then(function(snap){
+          if (snap.exists) index[0].entities = snap.data().entities;
+          populate();
+        });
+      },
+    };
+  })();
+
+  // ========================================================================
+  // BY CURRENCY view
+  // ========================================================================
+  var Currency = (function(){
+    var state = { periodKey: null, ccy: 'reporting' };
+
+    var statusDot = document.getElementById('currency-status-dot');
+    var statusText = document.getElementById('currency-status-text');
+    var reportHost = document.getElementById('currency-report-host');
+    var bannerHost = document.getElementById('currency-banner-host');
+    var notesHost = document.getElementById('currency-notes-host');
+    var periodSelect = document.getElementById('currency-period-select');
+    var ccyToggle = document.getElementById('currency-ccy-toggle');
+
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+    }
+
+    function render(){
+      var key = state.periodKey, ccy = state.ccy;
+      if (!key) return;
+      setStatus('Loading ' + key + '…');
+
+      db.doc('currencytb/' + key).get().then(function(snap){
+        if (!snap.exists){
+          renderEmpty('No data for this period', 'The sync job has not produced a currency breakdown for <code>' + key + '</code> yet.');
+          return;
+        }
+        var doc = snap.data();
+        var shardCount = doc.shardCount || 0;
+        var promises = [];
+        for (var i = 0; i < shardCount; i++) promises.push(db.doc('currencytb/' + key + '/shards/' + i).get());
+        return Promise.all(promises).then(function(snaps){
+          var rows = [];
+          snaps.forEach(function(s){ if (s.exists && s.data().rows) rows = rows.concat(s.data().rows); });
+          renderTable(doc, rows, ccy);
+          setStatus('FY' + doc.fiscalYear + ' P' + doc.period + ' · ' + rows.length + ' rows', false);
+        });
+      }).catch(function(err){
+        setStatus('Could not load currency breakdown (' + (err && err.code || 'error') + ')', true);
+      });
+    }
+
+    function renderTable(doc, rows, ccy){
+      var latest = index[0];
+      var entities = (latest && latest.entities) || [];
+      var showTotals = ccy === 'reporting';
+
+      var thead = '<tr><th class="col-account">Main Account</th><th class="col-name with-ccy">Main Account Name</th><th class="col-ccy">Txn Ccy</th>';
+      entities.forEach(function(e){
+        var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
+        thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
+      });
+      thead += showTotals
+        ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
+        : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
+      thead += '</tr>';
+
+      var totalsByEntity = {};
+      entities.forEach(function(e){ totalsByEntity[e.code] = 0; });
+      var grandTotal = 0;
+
+      rows.sort(function(a,b){
+        return (a.mainAccountId < b.mainAccountId ? -1 : a.mainAccountId > b.mainAccountId ? 1 : 0) ||
+          (a.txnCurrency < b.txnCurrency ? -1 : a.txnCurrency > b.txnCurrency ? 1 : 0);
+      });
+
+      var bodyRows = rows.map(function(r){
+        var row = '<tr><td class="col-account">' + escapeHtml(r.mainAccountId) + '</td><td class="col-name">' + escapeHtml(r.mainAccountName || '') + '</td><td class="col-ccy">' + escapeHtml(r.txnCurrency) + '</td>';
+        var rowTotal = 0;
+        entities.forEach(function(e){
+          var cell = (r.byEntity && r.byEntity[e.code]) || null;
+          var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
+          var f = fmtAmount(raw);
+          row += '<td class="' + f.cls + '">' + f.text + '</td>';
+          if (raw !== null){
+            totalsByEntity[e.code] += raw;
+            if (ccy === 'reporting') rowTotal += raw;
+          }
+        });
+        if (showTotals){
+          var ft = fmtAmount(rowTotal);
+          row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
+          grandTotal += rowTotal;
+        } else {
+          row += '<td class="col-total na">n/a</td>';
+        }
+        row += '</tr>';
+        return row;
+      }).join('');
+
+      var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-ccy"></td>';
+      entities.forEach(function(e){
+        if (ccy === 'accounting'){
+          footRow += '<td class="na-note">n/a</td>';
+        } else {
+          var f = fmtAmount(totalsByEntity[e.code]);
+          footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+        }
+      });
+      if (showTotals){
+        var fg = fmtAmount(grandTotal);
+        footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
+      } else {
+        footRow += '<td class="col-total na">n/a</td>';
+      }
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+        '</table></div></div>';
+      notesHost.hidden = false;
+    }
+
+    function populate(){
+      periodSelect.innerHTML = index.map(function(p){
+        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
+      }).join('');
+      if (!state.periodKey) state.periodKey = index[0].key;
+      periodSelect.value = state.periodKey;
+      render();
+    }
+
+    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
+    ccyToggle.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-ccy]');
+      if (!btn) return;
+      state.ccy = btn.getAttribute('data-ccy');
+      Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){ b.classList.toggle('active', b === btn); });
+      render();
+    });
+
+    return {
+      init: function(){
+        if (!index || !index.length){
+          renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet.');
+          setStatus('No data yet', true);
+          return;
+        }
+        if (!index[0].entities){
+          db.doc('tb/' + index[0].key).get().then(function(snap){
+            if (snap.exists) index[0].entities = snap.data().entities;
+            populate();
+          });
+        } else {
+          populate();
+        }
+      },
+    };
+  })();
+
+  // ========================================================================
+  // Shared index load
+  // ========================================================================
+  function loadIndex(){
+    var indexRef = db.doc('tb/index');
+    indexRef.onSnapshot(function(snap){
+      if (!snap.exists || !snap.data().periods || !snap.data().periods.length){
+        index = [];
+        Consolidated.onNoData();
+        return;
+      }
+      index = snap.data().periods.slice().sort(function(a,b){
+        return (b.fiscalYear - a.fiscalYear) || (b.period - a.period);
+      });
+      Consolidated.onIndexReady();
+      flushPendingInits();
+    }, function(){
+      Consolidated.onDbUnavailable();
     });
   }
 
-  ccyToggle.addEventListener('click', function(e){
-    var btn = e.target.closest('button[data-ccy]');
-    if (!btn) return;
-    state.ccy = btn.getAttribute('data-ccy');
-    Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){
-      b.classList.toggle('active', b === btn);
-    });
-    if (state.currentPeriodDoc && state.periodKey){
-      loadPeriod(state.periodKey);
-    }
-  });
-
-  periodSelect.addEventListener('change', function(){
-    state.periodKey = periodSelect.value;
-    loadPeriod(state.periodKey);
-  });
-
   (async function init(){
     try{
-      state.db = await window.claude.use('db');
+      db = await window.claude.use('db');
     } catch (e){
-      state.db = null;
+      db = null;
     }
-    if (!state.db){
-      renderEmpty('Report database unavailable', 'This view could not connect to the report’s data store. Try reopening the report, or contact Business Solutions if this persists.');
-      setStatus('Unavailable', true);
+    if (!db){
+      Consolidated.onDbUnavailable();
       return;
     }
     loadIndex();

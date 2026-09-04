@@ -8,6 +8,13 @@ setup needed for the data source. **2026-09-04: fixed a real bug** where
 every entity's December (year-end close) period failed to net to zero —
 see "Findings" #3 below and "Known open control-total exceptions".
 
+**2026-09-04: added two tabs and a redesign.** The report now has three
+tabs — Consolidated (the original view), Company TB, and By Currency — see
+"The three views" below. The reference URL the report owner asked to match
+(`victorious-water-0f3dd9e00.7.azurestaticapps.net`) was not reachable from
+this session (egress blocked), so the visual redesign is an independent
+pass using the same Huda Beauty brand tokens, not a copy of that page.
+
 ## How data gets in (no credentials needed)
 
 The report reads a shared, org-internal database attached to that Artifact
@@ -20,15 +27,44 @@ history describing a service-principal / REST API approach, that was the
 original plan before the connector turned out to already be available —
 it's been replaced.
 
+## The three views
+
+- **Consolidated** — the original view: Main Account × company columns,
+  Grand Total, reporting/accounting currency toggle, one period at a time.
+  Backed by the `tb` collection.
+- **Company TB** — pick one company and one period; shows Opening Balance
+  (the prior period's Closing Balance — carried forward for Balance Sheet
+  accounts, zero at the start of a fiscal year for P&L accounts), Current
+  Month Dr, Current Month Cr, and Closing Balance, per main account.
+  Opening/Closing come from `tb`; Dr/Cr come from the new `movement`
+  collection (`sql/monthly_movement.sql`), which is *raw* monthly movement
+  with **no simulated adjustments applied** (those only ever touch the
+  Consolidated view's Closing Balance) — the tab's banner flags whether
+  Opening + Dr − Cr reconciles to Closing for that reason.
+- **By Currency** — the same Closing Balance as Consolidated, but with one
+  row per (main account, original transaction currency) pair instead of one
+  row per main account, so an account posted in more than one currency
+  shows a row per currency. Backed by the new `currencytb` collection
+  (`sql/monthly_movement_by_currency.sql`). Also does not include simulated
+  adjustments.
+
 ## What's here
 
 - `report/consolidated-trial-balance.html` — source for the published
-  Artifact. Edit this, then republish it to the same URL (from a session
-  that has published it before, passing that `url`) to push a UI change
-  live — the Artifact tool doesn't read from this repo automatically.
-- `sql/consolidated_trial_balance.sql` — the query, with extensive comments
-  on three bugs found and fixed by testing live against real data (see
-  "Findings from live validation" below).
+  Artifact (all three tabs). Edit this, then republish it to the same URL
+  (from a session that has published it before, passing that `url`) to push
+  a UI change live — the Artifact tool doesn't read from this repo
+  automatically.
+- `sql/consolidated_trial_balance.sql` — the main query (Consolidated tab /
+  `tb` collection), with extensive comments on three bugs found and fixed by
+  testing live against real data (see "Findings from live validation"
+  below).
+- `sql/monthly_movement.sql` — monthly Dr/Cr movement per (entity, account),
+  no BS/PL bucketing needed (see the file's header for why) — feeds the
+  Company TB tab's Dr/Cr columns and the `movement` collection.
+- `sql/monthly_movement_by_currency.sql` — same as above with
+  `transactioncurrencycode` added to the grain — feeds the By Currency tab
+  and the `currencytb` collection.
 - `scripts/entities.json` — the 16 operating legal entities in scope, with
   their ledger RECID, accounting currency, and reporting currency.
 - `scripts/render_query.py` — substitutes the period-end/fiscal-year-start
@@ -39,6 +75,21 @@ it's been replaced.
   entities, control totals, warnings).
 - `scripts/build_db_writes.py` — shards that JSON into `write_db`-ready
   batches, staying under the 256 KiB per-document limit.
+- `scripts/build_series_from_movement.py` — derives the `tb` collection's
+  full closing-balance series directly from `monthly_movement.sql`'s output
+  (net delta = debit − credit), instead of a separate balance query, so the
+  Consolidated view and the Company TB tab's Dr/Cr are guaranteed to
+  reconcile when built from the same fetch (see "Fetch everything in the
+  same sitting" below).
+- `scripts/build_monthly_movement.py` — builds the `movement` collection's
+  per-period documents from `monthly_movement.sql`'s output, plus a
+  `--validate-against-dir` spot-check (Opening + Dr − Cr == stored Closing).
+- `scripts/build_currency_series.py` — same reconstruction as
+  `build_series_from_movement.py`, keyed by (entity, account, currency)
+  instead of (entity, account), for the `currencytb` collection.
+- `scripts/prepare_movement_writes.py` / `scripts/prepare_currency_writes.py`
+  — shard `movement`/`currencytb` period JSON into write_db-ready batches,
+  mirroring `prepare_backfill_writes.py` for `tb`.
 
 ## Daily refresh — one thing left to fix
 
@@ -90,6 +141,30 @@ re-run) — `prepare_backfill_writes.py` re-applies the HBCB/HBUK simulated
 adjustments to whichever periods still need them (same threshold check as
 the daily Routine), so re-running the full backfill after those close
 entries land in D365 will correctly stop simulating them.
+
+**2026-09-04 update: `tb`, `movement`, and `currencytb` are now built from
+one query, not several.** Adding the Company TB and By Currency tabs meant
+also fetching monthly Dr/Cr movement (`sql/monthly_movement.sql`) and, for
+By Currency, movement by transaction currency
+(`sql/monthly_movement_by_currency.sql`). Since the `tb` collection's net
+delta (debit − credit) is exactly what `monthly_movement.sql` already
+computes, `scripts/build_series_from_movement.py` now derives `tb`'s full
+closing-balance series *from that same movement fetch* rather than a
+separate BS/PL delta query, and `scripts/build_currency_series.py` does the
+same, keyed by (entity, account, currency), for `currencytb`. This isn't
+just less duplicated work -- it's the fix for the same "fetch everything in
+the same sitting" lesson above, generalized: any two collections meant to
+reconcile with each other (Consolidated's Closing Balance vs. Company TB's
+Opening + Dr − Cr, or Consolidated vs. By Currency's per-currency sum) will
+show small live-data-drift discrepancies in the most recent 1-2 periods if
+built from separate live queries run even a few minutes apart -- confirmed
+live on 2026-09-04 (a few HBDS accounts in FY2026 P8 differed by
+$370-480K between a `tb` snapshot fetched the previous day and a fresh
+movement fetch; re-deriving `tb` from the fresh movement fetch made the
+discrepancy vanish, and it was confirmed via a live point-in-time query
+that the fresher number was correct). `backfill_all_periods.py` still works
+if you need it (e.g. as a cross-check), but the one-query approach is now
+the standard path for a full rebuild.
 
 ## Findings from live validation (2026-09-03)
 
