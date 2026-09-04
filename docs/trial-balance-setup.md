@@ -368,6 +368,72 @@ posting:
   this was traced, since it's exactly the kind of wording that would make a
   viewer suspect this bug where none exists.
 
+## Company TB / By Currency: Opening/Closing totals silently dropped zeroed accounts (real bug, fixed 2026-09-04)
+
+**Report owner reported (screenshot)**: HBDS's Mar 2026 Opening Balance
+Grand Total was `(142,377.96)` instead of ~0.00, and asked to double-check
+the logic across all three tabs, all companies, all months, all
+currencies — not just this one case.
+
+**Root cause, traced and fixed same day**: `Company.render()` and
+`Currency.render()` built their row/account list from
+`Object.keys(closingByAccount)` (or `closingByKey`) — i.e. only accounts
+present in the **current** period's `tb`/`currencytb` shard. Any account
+that had a real, nonzero balance in the **prior** period but closes to
+**exactly** zero in the current period naturally has no row in that
+period's shard (the sync only stores nonzero balances) — so it silently
+dropped out of the table entirely, along with its opening balance and any
+movement that closed it out. The Grand Total was short by exactly the sum
+of those dropped accounts' prior balances.
+
+- Confirmed with live data: HBDS's stored `tb/2026-02` data (Feb 2026
+  closing) independently ties to the Databricks ground truth exactly
+  (verified via a live query: BS + FYTD P&L nets to 0.00, both accounting
+  and reporting currency) — the **stored data was correct**; only the
+  **rendering** dropped 3 accounts (`1142006`, `6210027`, `6790017`) that
+  had a combined +142,377.96 reporting-currency balance in Feb 2026 but
+  net to exactly zero in Mar 2026. That is the entire discrepancy,
+  confirmed to the cent.
+- **Fix**: both render functions now build their row set from the
+  **union** of accounts (or account+currency keys) appearing in the
+  closing data, the opening data, *and* the movement data — not closing
+  data alone. An account that fully clears this period now still shows
+  its correct Opening Balance, Dr/Cr, and a Closing Balance of 0.00, and
+  is no longer dropped from the table or the Grand Total.
+- **Validated against real production data** (not just synthetic test
+  data) by running the actual page code in a headless DOM against the
+  live `tb`/`movement`/`currencytb`/`currencymovement` documents for
+  HBDS Mar 2026: Opening Grand Total now shows 0.00 (was `(142,377.96)`),
+  Closing Grand Total shows 0.00, Dr and Cr both foot to 305,265,160.72,
+  and Opening + Dr − Cr = Closing exactly, on **both** the Company TB and
+  By Currency tabs (417 rows once split by currency vs. 177 by account).
+  Cross-checked a second, unrelated entity/period (HBAQ, Jan 2026, the
+  P&L-reset-at-period-1 special case) against live Databricks with the
+  same result.
+- **How widespread this was**: this class of bug affects *any* period
+  where at least one account fully clears to zero relative to the prior
+  period — normal, everyday activity (an account paid down to nil,
+  year-end P&L resets, etc.), not a rare edge case. It is therefore likely
+  this was visible on many company/period combinations across both
+  affected tabs, exactly matching what the report owner observed. The fix
+  is a general algorithmic correction (not period- or company-specific),
+  so it applies uniformly everywhere once published — it does not require
+  rebuilding any of the underlying `tb`/`movement`/`currencytb`/
+  `currencymovement` data, since that data was already correct.
+- **Consolidated tab is not affected**: it only ever shows one period's
+  Closing Balance per entity (no Opening column, no cross-period
+  reconciliation), so it has no equivalent bug to this one.
+- **Broader due-diligence done in the same pass** (not exhaustive, but
+  substantive): scanned every one of the 93 periods' self-reported
+  control-total warnings — found nothing beyond the already-documented
+  HBCB/HBUK simulated adjustments and immaterial ~$0.01 rounding noise on
+  HBDM/HBFZ across a handful of periods (not a new finding, not
+  actionable). Cross-checked `tb` vs `currencytb` for HBDS Mar 2026
+  (1,208 account/entity combinations): only the two expected differences
+  where `tb` carries the HBCB/HBUK simulated adjustment and `currencytb`
+  correctly does not (per its own footer note), plus sub-cent floating
+  point noise on ~127 keys — nothing material or unexplained.
+
 ## Business rules baked into the query (confirmed with the report owner)
 
 - **Balance Sheet** (`mainaccountid` 1,000,000–3,999,999): cumulative from

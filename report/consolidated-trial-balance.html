@@ -951,7 +951,10 @@
           prev.rows.forEach(function(acc){
             var cell = acc.byEntity && acc.byEntity[company];
             if (!cell) return;
-            openingByAccount[acc.mainAccountId] = ccy === 'reporting' ? cell.reporting : cell.accounting;
+            openingByAccount[acc.mainAccountId] = {
+              name: acc.mainAccountName,
+              value: ccy === 'reporting' ? cell.reporting : cell.accounting,
+            };
           });
         }
         var movementByAccount = {};
@@ -959,7 +962,16 @@
           movementByAccount[m.mainAccountId] = m;
         });
 
-        var accountIds = Object.keys(closingByAccount).sort();
+        // Union of every account with a closing balance, an opening
+        // balance, or in-period movement -- an account that closes to
+        // exactly zero this period (and so drops out of cur.rows) still
+        // had a real opening balance and/or real movement that must not
+        // be silently dropped from the table or its totals.
+        var accountIdSet = {};
+        Object.keys(closingByAccount).forEach(function(id){ accountIdSet[id] = true; });
+        Object.keys(openingByAccount).forEach(function(id){ accountIdSet[id] = true; });
+        Object.keys(movementByAccount).forEach(function(id){ accountIdSet[id] = true; });
+        var accountIds = Object.keys(accountIdSet).sort();
         if (!accountIds.length){
           renderEmpty('No activity', company + ' has no balances for ' + key + '.');
           return;
@@ -977,18 +989,21 @@
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
         var bodyRows = accountIds.map(function(id){
           var isPl = parseInt(id, 10) >= 4000000;
-          var opening = (isPl && cur.doc.period === 1) ? 0 : (openingByAccount[id] || 0);
+          var openingEntry = openingByAccount[id];
+          var closingEntry = closingByAccount[id];
           var m = movementByAccount[id];
+          var name = (closingEntry && closingEntry.name) || (openingEntry && openingEntry.name) || (m && m.mainAccountName) || '';
+          var opening = (isPl && cur.doc.period === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
           var dr = m ? (ccy === 'reporting' ? m.debitReporting : m.debitAccounting) : 0;
           var cr = m ? (ccy === 'reporting' ? m.creditReporting : m.creditAccounting) : 0;
-          var closing = closingByAccount[id].value;
+          var closing = closingEntry ? closingEntry.value : 0;
 
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
 
           var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
           return '<tr>' +
             '<td class="col-account">' + escapeHtml(id) + '</td>' +
-            '<td class="col-name">' + escapeHtml(closingByAccount[id].name || '') + '</td>' +
+            '<td class="col-name">' + escapeHtml(name) + '</td>' +
             '<td class="' + fo.cls + '">' + fo.text + '</td>' +
             '<td class="' + fd.cls + '">' + fd.text + '</td>' +
             '<td class="' + fc.cls + '">' + fc.text + '</td>' +
@@ -1138,7 +1153,10 @@
           prev.rows.forEach(function(r){
             var cell = r.byEntity && r.byEntity[company];
             if (!cell) return;
-            openingByKey[r.mainAccountId + '|' + r.txnCurrency] = ccy === 'reporting' ? cell.reporting : cell.accounting;
+            openingByKey[r.mainAccountId + '|' + r.txnCurrency] = {
+              account: r.mainAccountId, name: r.mainAccountName, ccy: r.txnCurrency,
+              value: ccy === 'reporting' ? cell.reporting : cell.accounting,
+            };
           });
         }
         var movementByKey = {};
@@ -1146,10 +1164,22 @@
           movementByKey[m.mainAccountId + '|' + m.txnCurrency] = m;
         });
 
-        var keys = Object.keys(closingByKey).sort(function(a, b){
-          var ra = closingByKey[a], rb = closingByKey[b];
-          return (ra.account < rb.account ? -1 : ra.account > rb.account ? 1 : 0) ||
-            (ra.ccy < rb.ccy ? -1 : ra.ccy > rb.ccy ? 1 : 0);
+        // Union of every (account, currency) with a closing balance, an
+        // opening balance, or in-period movement -- a row that closes to
+        // exactly zero this period (and so drops out of cur.rows) still
+        // had a real opening balance and/or real movement that must not
+        // be silently dropped from the table or its totals.
+        var keySet = {};
+        Object.keys(closingByKey).forEach(function(k){ keySet[k] = true; });
+        Object.keys(openingByKey).forEach(function(k){ keySet[k] = true; });
+        Object.keys(movementByKey).forEach(function(k){ keySet[k] = true; });
+        var keys = Object.keys(keySet).sort(function(a, b){
+          var ra = closingByKey[a] || openingByKey[a] || movementByKey[a];
+          var rb = closingByKey[b] || openingByKey[b] || movementByKey[b];
+          var accA = ra.account || ra.mainAccountId, accB = rb.account || rb.mainAccountId;
+          var ccyA = ra.ccy || ra.txnCurrency, ccyB = rb.ccy || rb.txnCurrency;
+          return (accA < accB ? -1 : accA > accB ? 1 : 0) ||
+            (ccyA < ccyB ? -1 : ccyA > ccyB ? 1 : 0);
         });
         if (!keys.length){
           renderEmpty('No activity', company + ' has no balances for ' + key + '.');
@@ -1171,21 +1201,25 @@
 
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
         var bodyRows = keys.map(function(k){
-          var row = closingByKey[k];
-          var isPl = parseInt(row.account, 10) >= 4000000;
-          var opening = (isPl && isPeriodOne) ? 0 : (openingByKey[k] || 0);
+          var closingEntry = closingByKey[k];
+          var openingEntry = openingByKey[k];
           var m = movementByKey[k];
+          var account = (closingEntry && closingEntry.account) || (openingEntry && openingEntry.account) || (m && m.mainAccountId);
+          var name = (closingEntry && closingEntry.name) || (openingEntry && openingEntry.name) || (m && m.mainAccountName) || '';
+          var txnCcy = (closingEntry && closingEntry.ccy) || (openingEntry && openingEntry.ccy) || (m && m.txnCurrency) || '';
+          var isPl = parseInt(account, 10) >= 4000000;
+          var opening = (isPl && isPeriodOne) ? 0 : (openingEntry ? openingEntry.value : 0);
           var dr = m ? (ccy === 'reporting' ? m.debitReporting : m.debitAccounting) : 0;
           var cr = m ? (ccy === 'reporting' ? m.creditReporting : m.creditAccounting) : 0;
-          var closing = row.value;
+          var closing = closingEntry ? closingEntry.value : 0;
 
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
 
           var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
           return '<tr>' +
-            '<td class="col-account">' + escapeHtml(row.account) + '</td>' +
-            '<td class="col-name">' + escapeHtml(row.name || '') + '</td>' +
-            '<td class="col-ccy">' + escapeHtml(row.ccy) + '</td>' +
+            '<td class="col-account">' + escapeHtml(account) + '</td>' +
+            '<td class="col-name">' + escapeHtml(name) + '</td>' +
+            '<td class="col-ccy">' + escapeHtml(txnCcy) + '</td>' +
             '<td class="' + fo.cls + '">' + fo.text + '</td>' +
             '<td class="' + fd.cls + '">' + fd.text + '</td>' +
             '<td class="' + fc.cls + '">' + fc.text + '</td>' +
