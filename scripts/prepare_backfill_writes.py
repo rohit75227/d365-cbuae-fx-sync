@@ -15,15 +15,15 @@ import argparse
 import json
 from pathlib import Path
 
-HBCB_ADJ = {
-    "entity": "HBCB", "account": "3141001", "account_name": "Retained Earnings - Accumulated",
-    "accounting_delta": -278118823.426, "reporting_delta": -278118823.426,
-    "reason": "Simulated FY2025 year-end close (not yet posted in D365) -- transfers HBCB's unclosed FY2024/2025 P&L into Retained Earnings",
-}
-HBUK_ADJ = {
-    "entity": "HBUK", "account": "3141001", "account_name": "Retained Earnings - Accumulated",
-    "accounting_delta": 18000.00, "reporting_delta": 24683.40,
-    "reason": "Simulated correction (not yet posted in D365) -- HBUK's FY2025 close (voucher clguk25v2) under-reversed account 6210008 Other Marketing - Influencer by exactly 18,000.00; this transfers the missing amount into Retained Earnings as if the close had been correct",
+ENTITIES_TO_AUTO_SIMULATE = {
+    "HBCB": {
+        "account": "3141001", "account_name": "Retained Earnings - Accumulated",
+        "reason": "Simulated year-end close (not yet posted in D365) -- transfers HBCB's unclosed prior-year P&L into Retained Earnings. Sized dynamically per period: this period's own raw control-total gap, not a fixed historical figure, because the gap grows as more fiscal years go unclosed (smaller in early periods, larger by FY2026).",
+    },
+    "HBUK": {
+        "account": "3141001", "account_name": "Retained Earnings - Accumulated",
+        "reason": "Simulated correction (not yet posted in D365) -- HBUK's FY2025 close under-reversed something; FY2025 P12 itself already nets to 0.00, this gap is specific to later periods and not fully isolated as of 2026-09-04 (see docs/trial-balance-setup.md). Sized dynamically per period, not a fixed figure.",
+    },
 }
 
 MAX_DOC_BYTES = 200 * 1024
@@ -31,36 +31,42 @@ MAX_WRITES_PER_BATCH = 50
 MAX_BATCH_BYTES = 800 * 1024  # stay well under the 1 MiB per-request limit
 
 
-def apply_adjustment(report, adj):
-    totals = report["controlTotals"].get(adj["entity"], {"accounting": 0.0, "reporting": 0.0})
-    if abs(totals["accounting"]) <= 0.01:
+def apply_adjustment(report, entity, spec):
+    """Plug exactly this period's own raw gap for `entity` -- NEVER a fixed
+    dollar amount copied from another period. The real gap (an unclosed
+    prior year's P&L sitting in Retained Earnings) grows as more fiscal
+    years go unclosed, so a fixed figure that's correct for one period
+    massively overcorrects a different period (caught 2026-09-04: applying
+    the FY2026-sized HBCB adjustment to Dec 2025 turned a +2.39M gap into a
+    -275.7M one)."""
+    totals = report["controlTotals"].get(entity, {"accounting": 0.0, "reporting": 0.0})
+    if abs(totals["accounting"]) <= 0.01 and abs(totals["reporting"]) <= 0.01:
         return  # already balanced for this period -- nothing pending yet, don't touch it
 
-    account = next((a for a in report["accounts"] if a["mainAccountId"] == adj["account"]), None)
+    accounting_delta = -totals["accounting"]
+    reporting_delta = -totals["reporting"]
+
+    account = next((a for a in report["accounts"] if a["mainAccountId"] == spec["account"]), None)
     if account is None:
-        account = {"mainAccountId": adj["account"], "mainAccountName": adj["account_name"], "byEntity": {}}
+        account = {"mainAccountId": spec["account"], "mainAccountName": spec["account_name"], "byEntity": {}}
         report["accounts"].append(account)
         report["accounts"].sort(key=lambda a: a["mainAccountId"])
 
-    cell = account["byEntity"].setdefault(adj["entity"], {"accounting": 0.0, "reporting": 0.0})
-    cell["accounting"] = (cell.get("accounting") or 0.0) + adj["accounting_delta"]
-    cell["reporting"] = (cell.get("reporting") or 0.0) + adj["reporting_delta"]
+    cell = account["byEntity"].setdefault(entity, {"accounting": 0.0, "reporting": 0.0})
+    cell["accounting"] = (cell.get("accounting") or 0.0) + accounting_delta
+    cell["reporting"] = (cell.get("reporting") or 0.0) + reporting_delta
 
     report.setdefault("simulatedAdjustments", []).append({
-        "entity": adj["entity"], "mainAccountId": adj["account"], "mainAccountName": adj["account_name"],
-        "accountingDelta": adj["accounting_delta"], "reportingDelta": adj["reporting_delta"], "reason": adj["reason"],
+        "entity": entity, "mainAccountId": spec["account"], "mainAccountName": spec["account_name"],
+        "accountingDelta": accounting_delta, "reportingDelta": reporting_delta, "reason": spec["reason"],
     })
 
-    totals["accounting"] += adj["accounting_delta"]
-    totals["reporting"] += adj["reporting_delta"]
-    report["controlTotals"][adj["entity"]] = totals
+    report["controlTotals"][entity] = {"accounting": 0.0, "reporting": 0.0}  # plugged exactly, by construction
 
-    report["warnings"] = [w for w in report["warnings"] if not w.startswith(f"{adj['entity']}:")]
-    if abs(totals["accounting"]) > 0.01:
-        report["warnings"].append(f"{adj['entity']}: accountingcurrencyamount does not net to zero ({totals['accounting']:.2f})")
+    report["warnings"] = [w for w in report["warnings"] if not w.startswith(f"{entity}:")]
     report["warnings"].append(
-        f"{adj['entity']}: includes a SIMULATED adjustment of {adj['accounting_delta']:,.2f} to "
-        f"{adj['account']} \"{adj['account_name']}\" -- {adj['reason']}"
+        f"{entity}: includes a SIMULATED adjustment of {accounting_delta:,.2f} to "
+        f"{spec['account']} \"{spec['account_name']}\" -- {spec['reason']}"
     )
 
 
@@ -100,8 +106,8 @@ def main():
         with open(in_dir / f"report_{key}.json") as f:
             report = json.load(f)
 
-        apply_adjustment(report, HBCB_ADJ)
-        apply_adjustment(report, HBUK_ADJ)
+        for entity, spec in ENTITIES_TO_AUTO_SIMULATE.items():
+            apply_adjustment(report, entity, spec)
 
         shards = shard_accounts(report["accounts"])
         period_doc = {
