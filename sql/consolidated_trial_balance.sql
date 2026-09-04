@@ -24,30 +24,47 @@
 --    zero unexplained values (24 distinct values total across all history:
 --    16 operating entities + 9 KY entities + 8 stray NULL-ledger rows).
 --
--- 3. CLG-tagged vouchers are NOT purely a same-year P&L-zeroing artifact.
---    The batch that closes fiscal year N's P&L is split across TWO postings:
---    a December-of-year-N entry and a January-of-year-(N+1) entry, and the
---    January entry also carries the Balance-Sheet-side retained-earnings
---    movement (verified directly: HBCB's Jan-2026 CLG batch nets to exactly
---    0.00 across 14 accounts, but excluding it entirely from the BS bucket
---    dropped a real -278,118,823.43 "Retained Earnings - Accumulated"
---    movement with nothing to offset it, since the query never saw its
---    P&L-side counterpart in the first place). Excluding CLG-tagged entries
---    ONLY from the P&L bucket (never the Balance Sheet bucket) fixed 14 of
---    16 entities to net to EXACTLY 0.00 debits=credits.
+-- 3. CLG-tagged vouchers must NOT be excluded from either bucket, ever --
+--    despite how tempting that looks for "showing this year's real,
+--    unclosed P&L activity". Two dead ends were tried and both broke real
+--    periods before landing on this:
+--    a) Exclude ALL CLG entries everywhere -> strips out legitimate
+--       Retained-Earnings roll-forward from every prior year's close,
+--       understating equity by hundreds of millions cumulative-forward.
+--    b) Exclude CLG only from the P&L bucket, keep it in the Balance Sheet
+--       bucket -> fixed HBCB (whose Jan-2026 CLG batch happens to be 100%
+--       Balance-Sheet-side, so this looked like the right fix), but SILENTLY
+--       BROKE every other entity's December (year-end) period and any
+--       later period, because a normal entity's December CLG batch is one
+--       balanced double-entry transaction touching BOTH a P&L account
+--       (zeroing it) AND a Balance Sheet account (crediting Retained
+--       Earnings) -- keeping the BS side while dropping the P&L side of
+--       the SAME transaction breaks it by exactly the amount zeroed.
+--       Verified live: with (b), all 12 non-HBCB entities checked were off
+--       by millions to over a billion for FY2025 P12 (December 2025).
+--    The fix: NO CLG exclusion anywhere. A trial balance is just "whatever
+--    the GL currently says", and any valid double-entry ledger balances to
+--    0.00 by construction, closing entries included -- there is no need to
+--    special-case CLG at all. For a still-open fiscal year (no close
+--    posted yet), P&L naturally shows real accumulated activity. For an
+--    already-closed year, P&L naturally shows ~0.00 for that year (that IS
+--    what "closed" means) -- this is correct, not a bug, even though it
+--    looks like a P&L account "goes to zero" between November and December.
+--    Verified live: with the exclusion removed, 10 of 12 entities checked
+--    net to EXACTLY 0.00 for FY2025 P12; the remaining discrepancies (HBCB,
+--    HBUK) are real, already-diagnosed data issues (see the "Known open
+--    control-total exceptions" list), not query artifacts.
 --
 -- Grain: one row per (mainaccountid, entity_code) for the requested
 -- as-of period. The sync step pivots entities into columns.
 --
 -- Period logic (confirmed with the report owner):
 --   - Balance Sheet accounts (mainaccountid 1000000-3999999): cumulative
---     from ledger inception through the selected period end, with NO CLG
---     exclusion (CLG batches carry the real retained-earnings movement on
---     their Balance Sheet side -- see finding 3 above).
+--     from ledger inception through the selected period end. No exclusions.
 --   - P&L accounts (mainaccountid >= 4000000): movement within the
 --     selected fiscal year only (fiscal year confirmed = calendar year, by
---     the CLG close consistently landing in December), with CLG-tagged
---     entries excluded (that's the mechanism that zeros P&L at close).
+--     the CLG close consistently landing in December). No exclusions --
+--     see finding 3 above for why CLG must NOT be filtered out here.
 --
 -- Entities: gje.ledger mapped via the RECID table in the GL Reporting
 -- project instructions. Any ledger not in that CASE (all "KY*" entities,
@@ -75,14 +92,15 @@
 --     scoping) nets to ~0.00, so nothing is missing from Databricks -- this
 --     should self-resolve once that close is posted in D365. Not a query
 --     bug; don't "fix" it here.
---   - HBUK: off by -18,000.00 (accounting) / -24,683.40 (reporting). Traced
---     to account 6210008 "Other Marketing - Influencer": HBUK's FY2025
---     close (voucher clguk25v2, dated 2025-12-31) was actually posted
---     2026-08-13 -- eight months late -- and under-reversed this one
---     account by exactly 18,000.00 (real activity +449,757.21 vs. reversal
---     -431,757.21). Every other account/year closes perfectly. Root cause
---     of the shortfall itself (late accrual vs. manual adjustment) isn't
---     visible from GL data -- ask whoever ran that close.
+--   - HBUK: off by -18,000.00 (accounting) / -24,683.40 (reporting) in
+--     FY2026 periods -- but FY2025 P12 (December 2025) itself nets to
+--     EXACTLY 0.00 after the 2026-09-04 fix (see finding 3). That split
+--     result means the account 6210008 "Other Marketing - Influencer"
+--     story traced on 2026-09-03 (late close, voucher clguk25v2 posted
+--     2026-08-13, under-reversed by exactly 18,000.00) is not the full
+--     picture -- something 2026-dated, connected to the same late close,
+--     is involved too. Not yet fully isolated; the simulated adjustment
+--     still correctly zeroes it for FY2026 periods in the meantime.
 --   - HBFR: reporting-currency-only, off by +2,443.07 (accounting currency
 --     ties exactly) -- looks like an FX-translation rounding artifact.
 -- ============================================================================
@@ -121,16 +139,16 @@ WITH filtered AS (
       AND COALESCE(gje.IsDelete, false)  = false
       AND gje.accountingdate < {{PERIOD_END_EXCLUSIVE}}
       AND (
-            -- Balance Sheet: cumulative since inception, CLG included
-            -- (it carries the real retained-earnings movement)
+            -- Balance Sheet: cumulative since inception. No exclusions --
+            -- a valid double-entry ledger balances by construction.
             CAST(ma.mainaccountid AS BIGINT) BETWEEN 1000000 AND 3999999
             OR
-            -- P&L: this fiscal year only, CLG excluded (it's the
-            -- mechanism that zeros P&L at close)
+            -- P&L: this fiscal year only. No CLG exclusion here either --
+            -- see finding 3 in the header comment for why that broke
+            -- December (year-end) periods for every entity.
             (
               CAST(ma.mainaccountid AS BIGINT) >= 4000000
               AND gje.accountingdate >= {{FY_START}}
-              AND LOWER(COALESCE(gje.subledgervoucher, '')) NOT LIKE '%clg%'
             )
           )
 )

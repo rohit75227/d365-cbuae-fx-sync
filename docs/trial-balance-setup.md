@@ -2,9 +2,11 @@
 
 Report link: https://claude.ai/code/artifact/713b7be7-486a-4a4d-a0bd-f5b9f964b2ac
 
-**Live as of 2026-09-03** with real data for all 93 periods from FY2019 P1
+**Live as of 2026-09-04** with real data for all 93 periods from FY2019 P1
 through FY2026 P9 (September, in progress) — full history, no further
-setup needed for the data source.
+setup needed for the data source. **2026-09-04: fixed a real bug** where
+every entity's December (year-end close) period failed to net to zero —
+see "Findings" #3 below and "Known open control-total exceptions".
 
 ## How data gets in (no credentials needed)
 
@@ -56,19 +58,27 @@ immediately, live, in under a minute.
 ## Backfilling or re-running periods manually
 
 **Full history (2019-01 through 2026-09) is already loaded** — all 93
-periods, done 2026-09-03 via `scripts/backfill_all_periods.py` +
+periods, done 2026-09-03/04 via `scripts/backfill_all_periods.py` +
 `scripts/prepare_backfill_writes.py` rather than running
 `sql/consolidated_trial_balance.sql` 93 times. That approach: fetch two
-monthly-grain queries (BS movement including CLG, PL movement excluding
-CLG) paginated via `ROW_NUMBER()` per the mandatory truncation rule (30,352
-BS rows + 31,721 PL rows, each split into ~12,000-row pages), then
-forward-fill (Balance Sheet, cumulative since inception) or year-reset
-(P&L, resets every January) the monthly deltas in Python to reconstruct
-every period from those 6 queries instead of 93 full-table scans.
-`backfill_all_periods.py` validates pagination integrity (no gaps or
-duplicate row numbers across pages) before trusting either result, and
-its output matched the point-in-time query's numbers exactly on the
-periods already validated (FY2026 P8/P9).
+monthly-grain queries (BS movement, PL movement — both include CLG now,
+per Finding #3) paginated via `ROW_NUMBER()` per the mandatory truncation
+rule (30,352 BS rows + 32,573 PL rows, each split into ~12,000-row pages),
+then forward-fill (Balance Sheet, cumulative since inception) or
+year-reset (P&L, resets every January) the monthly deltas in Python to
+reconstruct every period from those 6 queries instead of 93 full-table
+scans. `backfill_all_periods.py` validates pagination integrity (no gaps
+or duplicate row numbers across pages) before trusting either result.
+
+**Fetch the BS and PL monthly-grain queries in the same sitting.** The
+2026-09-04 fix was rebuilt from a BS fetch made the previous day and a PL
+fetch made fresh — mixing them produced spurious new-looking discrepancies
+in the still-open current period (HBDS, HBUS, HBDM) purely from new
+transactions landing on Databricks between the two fetches, not from any
+logic bug. Refetching both at the same time made those vanish. If a
+future backfill produces control totals that look worse than a live
+point-in-time check for the same period, check fetch timing before
+assuming the query broke again.
 
 For a single new period (e.g. once FY2026 P10 exists), the simpler
 one-period pipeline still works and is what the daily Routine uses: ask
@@ -104,15 +114,37 @@ produced a **silently wrong, not obviously wrong** trial balance:
    operating entities + 9 `KY*` entities + 8 stray NULL-ledger rows, with
    nothing left unexplained).
 
-3. **CLG-tagged vouchers aren't purely a "zero out this year's P&L"
-   artifact** — the batch that closes fiscal year N is split across a
-   December-of-year-N posting and a January-of-year-(N+1) posting, and the
-   January posting also carries the *Balance Sheet*-side retained-earnings
-   movement. Excluding all CLG entries from the Balance Sheet bucket (as
-   originally planned) dropped a real one-sided Retained Earnings movement
-   with nothing to offset it. Fixed by excluding CLG-tagged entries **only**
-   from the P&L bucket, never the Balance Sheet bucket. This alone fixed 14
-   of 16 entities to net to exactly 0.00 debits=credits.
+3. **CLG-tagged vouchers must NOT be excluded from either bucket, ever.**
+   Two dead ends were tried before landing on this, both worth recording
+   because both *looked* right until tested against a December period:
+   - Exclude ALL CLG entries everywhere -> strips out legitimate
+     Retained-Earnings roll-forward from every prior year's close,
+     understating equity by hundreds of millions cumulative-forward.
+   - Exclude CLG only from the P&L bucket, keep it in the Balance Sheet
+     bucket -> looked correct because it fixed HBCB (whose Jan-2026 CLG
+     batch happens to be 100% Balance-Sheet-side) and every period tested
+     at the time (Aug/Sep 2026, both mid-year). **Missed by that testing:
+     every entity's actual December (year-end close) period.** A normal
+     entity's December CLG batch is one balanced double-entry transaction
+     touching both a P&L account (zeroing it) and a Balance Sheet account
+     (crediting Retained Earnings) — keeping the BS side while dropping
+     the P&L side of the *same* transaction breaks it by exactly the
+     amount zeroed. Caught 2026-09-04 when the report owner noticed
+     December 2025 wasn't netting to zero: live-checked and found **all
+     12 entities tested were off by millions to over a billion** for
+     FY2025 P12.
+   The fix: no CLG exclusion anywhere. A trial balance is just "whatever
+   the GL currently says" — any valid double-entry ledger balances to
+   0.00 by construction, closing entries included, so there's no need to
+   special-case CLG at all. An still-open fiscal year naturally shows real
+   P&L activity (no close posted yet); an already-closed year naturally
+   shows ~0.00 P&L for that year (that IS what "closed" means — not a
+   bug, even though it looks like accounts "reset" between Nov and Dec).
+   Verified live: 10 of 12 entities net to EXACTLY 0.00 for FY2025 P12
+   with the exclusion removed; the remaining two (HBCB, HBFR) are the
+   same already-diagnosed data issues below, not query artifacts. This
+   change did not alter FY2026 P8/P9 at all (no CLG activity dated within
+   that fiscal year touches a P&L account), so nothing else moved.
 
 ## Simulated adjustments (pro-forma, not posted in D365)
 
@@ -179,17 +211,21 @@ Surfaced as a warning banner on the report itself, not hidden:
   worth confirming it clears on the next sync after that happens, rather
   than assuming it's fixed.
 - **HBUK**: off by -18,000.00 (accounting currency) / -24,683.40 (reporting
-  currency). **Traced to a specific cause, now simulated** (see "Simulated
-  adjustments" above): HBUK's FY2025 year-end close (voucher `clguk25v2`,
-  dated 2025-12-31) was actually posted on **2026-08-13** — eight months
-  late. On account `6210008` "Other Marketing - Influencer", real FY2025
-  activity was +449,757.21 but the late close only reversed -431,757.21 —
-  short by exactly 18,000.00. Every other account and every other year
-  closes perfectly. Likely a marketing accrual posted to that account
-  after the close figures were calculated, or a manual adjustment that
-  didn't carry into the final reversal — worth asking whoever ran HBUK's
-  FY2025 close in August 2026. Not visible from GL data alone why the
-  close itself ran so late or what exactly caused the shortfall.
+  currency) **in FY2026 periods specifically — but FY2025 P12 (December
+  2025) itself now nets to exactly 0.00** after the 2026-09-04 CLG fix.
+  That's a genuine, only-partly-understood nuance, not a contradiction to
+  paper over: whatever the account-`6210008` "Other Marketing - Influencer"
+  shortfall traced on 2026-09-03 actually is (real FY2025 activity was
+  +449,757.21 against a late close, voucher `clguk25v2` posted 2026-08-13,
+  eight months late, that only reversed -431,757.21), it does not show up
+  when FY2025 is checked as a whole, only when FY2026's cumulative Balance
+  Sheet position is checked against FY2026's own P&L. That points at a
+  2026-dated entry connected to the same late close (rather than the
+  entire story being containable within FY2025) — not yet isolated to a
+  specific transaction the way HBCB and the original HBUK finding were.
+  Simulated adjustment (see above) still correctly zeroes this out for
+  FY2026 periods; worth another pass to fully isolate the cause before
+  telling finance the account-6210008 story is the complete explanation.
 - **HBLL**: off by -0.02 — immaterial, likely rounding.
 - **HBFR**: reporting-currency-only, off by +2,443.07 (accounting currency
   ties exactly) — looks like an FX-translation rounding artifact.
@@ -202,11 +238,10 @@ data, not query bugs.
 ## Business rules baked into the query (confirmed with the report owner)
 
 - **Balance Sheet** (`mainaccountid` 1,000,000–3,999,999): cumulative from
-  ledger inception through the selected period, CLG entries included (they
-  carry the real retained-earnings movement).
+  ledger inception through the selected period. No exclusions.
 - **P&L** (`mainaccountid` ≥ 4,000,000): movement within the selected
-  fiscal year only, CLG entries excluded (that's the mechanism that zeros
-  P&L at close).
+  fiscal year only. No exclusions — see Finding #3 above for why CLG
+  entries must NOT be filtered out of this bucket.
 - **Reporting currency (default view)**: `reportingcurrencyamount`, with
   HBBV and HBFM falling back to `accountingcurrencyamount` since neither
   has a reporting currency configured in D365 (both are USD-denominated,
