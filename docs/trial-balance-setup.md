@@ -282,6 +282,26 @@ where a concrete pending/incorrect entry was identified. Leave it as a
 flagged, immaterial ($2,443) warning unless finance identifies an actual
 missing FX Translation Reserve entry to simulate instead.
 
+**Traced to a specific fiscal year (2026-09-04, per report owner's ask
+to check why it shows in Jan 2020).** Every other closed fiscal year for
+HBFR (2019, 2021-2025) nets to **exactly** 0.00 in both accounting (EUR)
+and reporting (USD) currency. **Only FY2020** has a residual: EUR P&L
+nets to exactly 0.00, but USD P&L nets to -2,443.07 — the entire gap
+lives in this one year. January 2020 itself has zero activity (nothing
+originates there specifically); the residual comes from real
+month-by-month FY2020 trading activity (Jun-Dec 2020) each converted at
+its own transaction-date rate, plus a same-year closing/revaluation
+batch (`clgfr20v5`, dated 2020-12-31 but not actually posted until
+2022-01-25 — over a year late) that includes lines with an EUR amount
+of exactly 0.00 but a nonzero USD amount (e.g. account `6810001`
+"Unrealised FX gains or loss" and an `HBFR-FOR-0000010` foreign-currency
+revaluation batch, also created 2022-01-25/24) — normal, EUR functional
+currency doesn't need a matching entry for a USD-only translation
+adjustment. Confirms the "historical-rate FX translation residual"
+diagnosis with a specific source rather than a general theory, but
+doesn't change the conclusion: real, structural, immaterial, not a
+missing transaction to simulate.
+
 ## Known open control-total exceptions
 
 Surfaced as a warning banner on the report itself, not hidden:

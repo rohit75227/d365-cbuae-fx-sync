@@ -249,6 +249,8 @@
     border-color:var(--border);
     color:var(--text-dim);
   }
+  .banner .warning-item{ cursor:help; border-bottom:1px dotted currentColor; }
+  .banner .hint{ opacity:.7; font-style:italic; }
   td.simulated{
     background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(237,59,134,.12) 6px, rgba(237,59,134,.12) 12px);
     border-bottom:2px dashed var(--accent) !important;
@@ -569,6 +571,14 @@
     return d.innerHTML;
   }
 
+  // escapeHtml() alone is unsafe inside a double-quoted attribute value --
+  // it doesn't encode literal `"` characters (e.g. an account name like
+  // "Retained Earnings - Accumulated" embedded in free text), which would
+  // otherwise terminate the attribute early and corrupt the markup.
+  function escapeAttr(s){
+    return escapeHtml(s).replace(/"/g, '&quot;');
+  }
+
   function prevPeriodKey(key){
     var parts = key.split('-');
     var y = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
@@ -648,20 +658,33 @@
         '</div>';
     }
 
+    // Warning strings are long, free-text sentences (baked into the stored
+    // data at generation time). Show only the lead clause inline and put
+    // the full text in a title attribute -- same "hover for detail"
+    // pattern already used for the simulated-adjustment table cells.
+    function shortWarning(w){
+      var idx = w.indexOf(' -- ');
+      return idx === -1 ? w : w.slice(0, idx);
+    }
+
+    function warningItem(w){
+      return '<span class="warning-item" title="' + escapeAttr(w) + '">' + escapeHtml(shortWarning(w)) + '</span>';
+    }
+
     function renderBanner(warnings){
       warnings = warnings || [];
       var simulated = warnings.filter(function(w){ return w.indexOf('SIMULATED') !== -1; });
       var real = warnings.filter(function(w){ return w.indexOf('SIMULATED') === -1; });
       var html = '';
       if (real.length){
-        html += '<div class="banner"><strong>Control-total check:</strong>&nbsp;' +
-          real.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
+        html += '<div class="banner"><strong>Control totals:</strong>&nbsp;' +
+          real.map(warningItem).join(' &middot; ') +
           '</div>';
       }
       if (simulated.length){
-        html += '<div class="banner simulated"><strong>Includes simulated, not-yet-posted adjustments:</strong>&nbsp;' +
-          simulated.map(function(w){ return escapeHtml(w); }).join(' &middot; ') +
-          ' &mdash; the affected cells below are marked with a diagonal pattern.</div>';
+        html += '<div class="banner simulated"><strong>Simulated adjustments:</strong>&nbsp;' +
+          simulated.map(warningItem).join(' &middot; ') +
+          ' <span class="hint">(cells marked &middot; hover for details)</span></div>';
       }
       if (!real.length && !simulated.length){
         html += '<div class="banner good"><strong>Every entity nets to zero.</strong>&nbsp;No control-total exceptions for this period.</div>';
@@ -702,7 +725,7 @@
           var f = fmtAmount(raw);
           var adj = simulatedMap[acc.mainAccountId + '|' + e.code];
           var cellCls = f.cls + (adj ? ' simulated' : '');
-          var cellTitle = adj ? ' title="' + escapeHtml(adj.reason) + '"' : '';
+          var cellTitle = adj ? ' title="' + escapeAttr(adj.reason) + '"' : '';
           row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
           if (ccy === 'reporting'){
             if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
