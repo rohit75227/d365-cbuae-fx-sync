@@ -41,12 +41,28 @@ it's been replaced.
   with **no simulated adjustments applied** (those only ever touch the
   Consolidated view's Closing Balance) — the tab's banner flags whether
   Opening + Dr − Cr reconciles to Closing for that reason.
-- **By Currency** — the same Closing Balance as Consolidated, but with one
-  row per (main account, original transaction currency) pair instead of one
-  row per main account, so an account posted in more than one currency
-  shows a row per currency. Backed by the new `currencytb` collection
-  (`sql/monthly_movement_by_currency.sql`). Also does not include simulated
+- **By Currency** — same shape as Company TB (pick one company + one
+  period): Opening Balance / Current Month Dr / Current Month Cr / Closing
+  Balance, but with one row per (main account, original transaction
+  currency) pair instead of one row per main account. Backed by
+  `currencytb` (closing balances) and `currencymovement` (Dr/Cr), both from
+  `sql/monthly_movement_by_currency.sql`. Also does not include simulated
   adjustments.
+
+**2026-09-04, later same day: fixed Company TB / By Currency hanging on
+"Connecting...".** Both tabs' one-shot reads used `.get()` with no error
+handling, so any rejection failed silently with no visible feedback,
+leaving the dropdowns empty forever. Both now read through a shared
+`onSnapshot`-based one-shot helper (the same mechanism Consolidated was
+already using successfully) with an explicit timeout and `.catch()` on
+every chain, so a real failure now shows a message instead of hanging. By
+Currency was also redesigned at this point to match Company TB's shape
+(see above) instead of the original all-companies-as-columns layout, per
+follow-up feedback. `scripts/build_currency_movement.py` /
+`scripts/prepare_currency_movement_writes.py` build the `currencymovement`
+collection from the already-fetched `monthly_movement_by_currency.sql`
+pages (no new Databricks query needed) and were validated to reconcile
+exactly with `currencytb`'s closing balances before pushing.
 
 ## What's here
 
