@@ -640,6 +640,7 @@
 
     function renderEmpty(title, body){
       notesHost.hidden = true;
+      bannerHost.innerHTML = '';
       reportHost.innerHTML =
         '<div class="empty-state">' +
           '<p class="display">' + title + '</p>' +
@@ -905,6 +906,7 @@
 
     function renderEmpty(title, body){
       notesHost.hidden = true;
+      bannerHost.innerHTML = '';
       reportHost.innerHTML =
         '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
     }
@@ -1092,6 +1094,7 @@
 
     function renderEmpty(title, body){
       notesHost.hidden = true;
+      bannerHost.innerHTML = '';
       reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
     }
 
@@ -1153,7 +1156,7 @@
           return;
         }
 
-        var entityMeta = (index[0].entities || []).filter(function(e){ return e.code === company; })[0];
+        var entityMeta = (state.entities || []).filter(function(e){ return e.code === company; })[0];
         var ccyLabel = ccy === 'reporting' ? 'USD' : (entityMeta ? entityMeta.accountingCurrency : '');
 
         var thead = '<tr>' +
@@ -1254,8 +1257,11 @@
         if (!state.periodKey) state.periodKey = index[0].key;
         setStatus('Loading company roster…');
         docOnce(db.doc('tb/' + state.periodKey)).then(function(snap){
+          // NOTE: snapshot documents are frozen -- never write to snap.data()
+          // or to anything obtained from it (e.g. `index[N]`); keep any
+          // roster you need to reuse in this module's own `state` instead.
           var entities = (snap.exists && snap.data().entities) || [];
-          index[0].entities = index[0].entities || entities;
+          state.entities = entities;
           populate(entities);
         }).catch(function(err){
           setStatus('Could not load company list (' + errorText(err) + ')', true);
