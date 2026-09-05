@@ -18,9 +18,16 @@ from pathlib import Path
 
 
 def cell_value(cell):
+    # Support both connector cell shapes observed live across sessions:
+    # older data_array/{"string_value": ...} and current
+    # data_typed_array/{"str": ...}.
     if "null_value" in cell:
         return None
-    return cell.get("string_value")
+    if "string_value" in cell:
+        return cell["string_value"]
+    if "str" in cell:
+        return cell["str"]
+    return None
 
 
 def load_pages(paths):
@@ -36,7 +43,10 @@ def load_pages(paths):
             columns = cols
         elif columns != cols:
             raise SystemExit(f"{p}: column mismatch across pages")
-        for row in raw["result"]["data_array"]:
+        data_rows = raw["result"].get("data_array")
+        if data_rows is None:
+            data_rows = raw["result"]["data_typed_array"]
+        for row in data_rows:
             all_rows.append([cell_value(v) for v in row["values"]])
 
     idx = {name: i for i, name in enumerate(columns)}

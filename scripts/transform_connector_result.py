@@ -6,12 +6,19 @@ returned inline) into the same report JSON shape sync_trial_balance.py used
 to produce: { accounts, entities, controlTotals, fiscalYear, period,
 generatedAt, warnings }.
 
-The connector's JSON_ARRAY result format encodes every cell as
-{"string_value": "..."} or {"null_value": "NULL_VALUE"}, in the column
-order given by manifest.schema.columns -- this only knows how to read that
-shape (observed directly against a live query in this session), not the
-raw Databricks SQL Statement Execution API shape scripts/sync_trial_balance.py
-used when talking to Databricks directly over REST.
+The connector's result format encodes every cell in the column order given
+by manifest.schema.columns, but the connector has used two different
+per-cell shapes across sessions (both observed live, not guessed):
+  - older: result.data_array, cells {"string_value": "..."} or
+    {"null_value": "NULL_VALUE"}
+  - current (seen 2026-09-05): result.data_typed_array, cells {"str": "..."}
+    with the key presumably absent/empty for a null (no null cells appeared
+    in any query run against this data so far to confirm the exact null
+    shape -- if one ever does and this script mis-reads it, that's the
+    signal to revisit this, not a reason to guess now).
+Neither is the raw Databricks SQL Statement Execution API shape
+scripts/sync_trial_balance.py used when talking to Databricks directly over
+REST -- this script only knows the two connector shapes above.
 
 Usage:
   python3 scripts/transform_connector_result.py raw_result.json \
@@ -36,7 +43,12 @@ def load_entities():
 def cell_value(cell):
     if "null_value" in cell:
         return None
-    return cell.get("string_value")
+    if "string_value" in cell:
+        return cell["string_value"]
+    if "str" in cell:
+        return cell["str"]
+    # No recognized value key present -- treat as null rather than guess.
+    return None
 
 
 def parse_rows(raw):
@@ -50,8 +62,11 @@ def parse_rows(raw):
         )
     columns = [c["name"] for c in raw["manifest"]["schema"]["columns"]]
     idx = {name: i for i, name in enumerate(columns)}
+    data_rows = raw["result"].get("data_array")
+    if data_rows is None:
+        data_rows = raw["result"]["data_typed_array"]
     rows = []
-    for row in raw["result"]["data_array"]:
+    for row in data_rows:
         values = [cell_value(v) for v in row["values"]]
         rows.append(values)
     return idx, rows

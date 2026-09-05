@@ -12,8 +12,16 @@ see "Findings" #3 below and "Known open control-total exceptions".
 tabs — Consolidated (the original view), Company TB, and By Currency — see
 "The three views" below. The reference URL the report owner asked to match
 (`victorious-water-0f3dd9e00.7.azurestaticapps.net`) was not reachable from
-this session (egress blocked), so the visual redesign is an independent
-pass using the same Huda Beauty brand tokens, not a copy of that page.
+this session (egress blocked); the report owner later shared a screenshot
+of it instead, and the header/nav/table-header styling was rebuilt to match
+that (black masthead, "hudabeauty" wordmark, pink pill tabs, pink table
+headers) on 2026-09-05.
+
+**2026-09-05: the daily sync now updates all four collections, not just
+`tb`.** See "Daily refresh" below for the corrected procedure — the
+Routine's own prompt (written before Company TB / By Currency existed)
+only ever touched `tb`, which would have left `movement`/`currencytb`/
+`currencymovement` silently stale for the current period every day.
 
 ## How data gets in (no credentials needed)
 
@@ -107,20 +115,90 @@ exactly with `currencytb`'s closing balances before pushing.
   — shard `movement`/`currencytb` period JSON into write_db-ready batches,
   mirroring `prepare_backfill_writes.py` for `tb`.
 
-## Daily refresh — one thing left to fix
+## Daily refresh
 
-A Routine fires into this session daily at 04:00 UTC and follows the steps
-in its own prompt (query → transform → shard → write). **However: this
-platform rejected attaching the Databricks connector to a Routine via the
-API** ("the connectors parameter is not available for this organization").
-That means tomorrow's automatic firing will very likely run *without*
-connector access and do nothing (its prompt tells it to leave a note rather
-than fail silently). **To fix this, enable the connector for this Routine
-from the claude.ai Routines UI** (Settings → Routines → "Daily consolidated
-trial balance sync" → connector access) if that control exists for your
-org; otherwise the report will need a manual re-sync each day — ask Claude
-to "sync the trial balance for the current period" and it can do so
-immediately, live, in under a minute.
+A Routine fires into this session daily at 04:00 UTC. As of 2026-09-05 the
+connector is reachable from the Routine firing (the earlier "connectors
+parameter not available for this org" API rejection is no longer blocking
+it — confirmed by a live firing that ran the connector successfully).
+
+**The Routine's own stored prompt is still the pre-Company-TB/By-Currency
+version** (query → transform → shard → write for `tb` only) — update it via
+`update_trigger` when convenient, but until then treat this doc as the
+authoritative procedure, since the stored prompt would silently under-sync
+otherwise. The correct daily procedure updates **all four collections**:
+
+1. Determine fiscal year (= calendar year) and period (= calendar month)
+   from today's date.
+2. `python3 scripts/render_query.py --fiscal-year <FY> --period <P>`, run
+   via `execute_sql_read_only`. If `manifest.truncated` is true, stop — the
+   query needs `ROW_NUMBER()` pagination, don't guess a fix. Transform with
+   `scripts/transform_connector_result.py <raw_file> --fiscal-year <FY>
+   --period <P> > report.json`, then chain the HBCB/HBUK simulated
+   adjustments (see the Routine's stored prompt or the "Simulated
+   adjustments" section below for the exact commands), then
+   `scripts/build_db_writes.py < report_final.json > writes.json` and write
+   its batches to the `tb` collection (this part matches the original
+   design and is correct as-is).
+3. **Also refresh `movement`, `currencytb`, and `currencymovement` for the
+   current period** — these do NOT self-update from step 2:
+   - `sql/monthly_movement.sql` and `sql/monthly_movement_by_currency.sql`,
+     scoped to just the current month (`{{RANGE_START}}` = first of this
+     month, `{{RANGE_END_EXCLUSIVE}}` = first of next month — hand-substitute,
+     `render_query.py` only handles `consolidated_trial_balance.sql`). A
+     single month is small (a few hundred rows), one page suffices.
+   - `scripts/build_monthly_movement.py` / `scripts/build_currency_movement.py`
+     on that page → `scripts/prepare_movement_writes.py` /
+     `scripts/prepare_currency_movement_writes.py` → write_db.
+   - For `currencytb`, do **not** derive it incrementally from the prior
+     period's stored value (see the backdating finding just below for why)
+     — instead run a direct cumulative-by-currency query for the current
+     period (same BS-cumulative/PL-FYTD WHERE clause as
+     `consolidated_trial_balance.sql`, with `txn_ccy` added to the
+     SELECT/GROUP BY, no separate SQL file for this yet — see the
+     2026-09-05 sync in git history for the exact query used), transform,
+     shard with `prepare_currency_writes.py`, write. Cross-check it against
+     the same period's `tb` (sum `currencytb` across currency per account,
+     compare to `tb`'s per-account value) — should match exactly except the
+     entities with an active simulated adjustment (`tb` carries it,
+     `currencytb` correctly never does).
+4. Update `tb/index`: replace the entry for this period's key with a fresh
+   `generatedAt`, keep every other entry, write back.
+
+**Connector response cell shape has changed since these scripts were
+written, and can vary by call.** The claude-databricks-connector has been
+observed returning two different per-cell JSON shapes across sessions —
+older `result.data_array` with cells `{"string_value": ...}`, and (seen
+2026-09-05) `result.data_typed_array` with cells `{"str": ...}` — and even
+inline vs. saved-to-file responses from the *same* query can differ.
+`transform_connector_result.py`, `build_monthly_movement.py`, and
+`build_currency_movement.py` all handle both shapes now
+(`cell_value()` checks `string_value` then `str`); if a future connector
+version introduces a third shape, extend those `cell_value()` functions
+rather than picking one shape and assuming it's universal.
+
+**A backdated correction can make the prior period's stored closing stale
+— check for this on every sync, don't assume "prior period is settled."**
+Found live on 2026-09-05: HBUK/HBDS/HBDM had ~$1.5-50M of backdated
+corrections (accounting date in August, but `createddatetime` after
+2026-09-04's sync) land between two consecutive daily syncs — 73 (account,
+entity) combinations were off by more than $1 when a fresh query for
+August's own cutoff was compared against August's *already-published*
+`tb`. This is not a query bug; it's normal GL activity (late-dated
+corrections), but it means the "prior period" a sync treats as a fixed,
+trustworthy baseline can silently drift. **Before trusting the current
+period's Opening Balance (= prior period's stored Closing), spot-check it**:
+re-run the prior period's own direct query and diff against what's
+currently stored for a sample of accounts. If there's drift beyond
+immaterial rounding, refresh the prior period's `tb`, `currencytb`,
+`movement`, and `currencymovement` too (same procedure as steps 2-3 above,
+substituting the prior period), or Company TB / By Currency will show a
+"does not reconcile" banner for the current period that has nothing to do
+with today's sync — it's yesterday's stored data being wrong, not today's.
+Validate a fix by checking Opening (prior closing) + Dr − Cr = Closing
+across every (account, entity) combination for the current period, not
+just a sample, before considering the sync done (the file shapes are small
+enough for this to be a cheap, ordinary Python check, not an approximation).
 
 ## Backfilling or re-running periods manually
 
