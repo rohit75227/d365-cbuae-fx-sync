@@ -341,8 +341,8 @@
     white-space:nowrap;
     border-bottom:1px solid var(--border);
   }
-  thead th.col-account, thead th.col-name, thead th.col-ccy{ text-align:left; }
-  thead th .ccy-tag{
+  thead th.col-account, thead th.col-name, thead th.col-ccy, thead th.col-company{ text-align:left; }
+  .ccy-tag{
     display:block;
     font-weight:400;
     opacity:.7;
@@ -354,6 +354,7 @@
   thead th.col-name{ left:96px; z-index:4; min-width:220px; }
   thead th.col-name.with-ccy{ left:96px; }
   thead th.col-ccy{ min-width:64px; }
+  thead th.col-company{ min-width:80px; }
 
   tbody td{
     padding:9px 14px;
@@ -362,7 +363,7 @@
     border-bottom:1px solid var(--border);
     color:var(--text);
   }
-  tbody td.col-account, tbody td.col-name, tbody td.col-ccy{
+  tbody td.col-account, tbody td.col-name, tbody td.col-ccy, tbody td.col-company{
     text-align:left;
     position:sticky;
     background:var(--surface);
@@ -371,10 +372,11 @@
   tbody td.col-account{ left:0; font-weight:700; min-width:96px; }
   tbody td.col-name{ left:96px; min-width:220px; color:var(--text-dim); }
   tbody td.col-ccy{ font-weight:700; color:var(--accent); min-width:64px; }
+  tbody td.col-company{ font-weight:700; color:var(--accent); min-width:80px; }
   tbody tr:nth-child(even) td{ background-color:var(--surface-2); }
-  tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name, tbody tr:nth-child(even) td.col-ccy{ background-color:var(--surface-2); }
+  tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name, tbody tr:nth-child(even) td.col-ccy, tbody tr:nth-child(even) td.col-company{ background-color:var(--surface-2); }
   tbody tr:hover td{ background-color:var(--total-row-bg); }
-  tbody tr:hover td.col-account, tbody tr:hover td.col-name, tbody tr:hover td.col-ccy{ background-color:var(--total-row-bg); }
+  tbody tr:hover td.col-account, tbody tr:hover td.col-name, tbody tr:hover td.col-ccy, tbody tr:hover td.col-company{ background-color:var(--total-row-bg); }
 
   td.neg{ color:#b8264f; }
   td.zero{ color:var(--text-dim); }
@@ -1073,7 +1075,7 @@
   // COMPANY TB view
   // ========================================================================
   var Company = (function(){
-    var state = { company: null, periodKey: null, ccy: 'reporting' };
+    var state = { company: 'ALL', periodKey: null, ccy: 'reporting', entities: [] };
 
     var statusDot = document.getElementById('company-status-dot');
     var statusText = document.getElementById('company-status-text');
@@ -1105,10 +1107,11 @@
     }
 
     function render(){
-      var company = state.company, key = state.periodKey, ccy = state.ccy;
-      if (!company || !key) return;
+      var selectedCompany = state.company, key = state.periodKey, ccy = state.ccy;
+      if (!selectedCompany || !key) return;
 
-      setStatus('Loading ' + company + ' · ' + key + '…');
+      var isAll = selectedCompany === 'ALL';
+      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + key + '…');
       var prevKey = prevPeriodKey(key);
 
       Promise.all([
@@ -1122,65 +1125,101 @@
           return;
         }
 
-        var entityMeta = (cur.doc.entities || []).filter(function(e){ return e.code === company; })[0];
-        var ccyLabel = ccy === 'reporting' ? 'USD' : (entityMeta ? entityMeta.accountingCurrency : '');
+        var entityMetaByCode = {};
+        (cur.doc.entities || []).forEach(function(e, i){ entityMetaByCode[e.code] = { meta: e, order: i }; });
 
-        var closingByAccount = {};
+        function includeCompany(code){
+          return isAll || code === selectedCompany;
+        }
+        function rowCcyLabel(code){
+          if (ccy === 'reporting') return 'USD';
+          var found = entityMetaByCode[code];
+          return found ? found.meta.accountingCurrency : '';
+        }
+
+        // "All Companies" + Accounting mixes currencies across rows (each
+        // company in its own local currency), so a single summed total
+        // would be meaningless -- same reasoning as Consolidated's
+        // accounting-view total suppression. A single company's own
+        // Accounting-currency figures are still one consistent currency,
+        // so totals stay meaningful there.
+        var showTotals = ccy === 'reporting' || !isAll;
+        var headerCcyLabel = ccy === 'reporting' ? 'USD' : (isAll ? 'mixed ccy' : rowCcyLabel(selectedCompany));
+
+        // Key rows by "account|company" so "All Companies" can show every
+        // (account, company) combination as its own row; a single company
+        // just narrows this down to one company's worth of keys.
+        var closingByKey = {};
         cur.rows.forEach(function(acc){
-          var cell = acc.byEntity && acc.byEntity[company];
-          if (!cell) return;
-          closingByAccount[acc.mainAccountId] = {
-            name: acc.mainAccountName,
-            value: ccy === 'reporting' ? cell.reporting : cell.accounting,
-          };
-        });
-        var openingByAccount = {};
-        if (prev){
-          prev.rows.forEach(function(acc){
-            var cell = acc.byEntity && acc.byEntity[company];
-            if (!cell) return;
-            openingByAccount[acc.mainAccountId] = {
+          Object.keys(acc.byEntity || {}).forEach(function(company){
+            if (!includeCompany(company)) return;
+            var cell = acc.byEntity[company];
+            closingByKey[acc.mainAccountId + '|' + company] = {
               name: acc.mainAccountName,
               value: ccy === 'reporting' ? cell.reporting : cell.accounting,
             };
           });
+        });
+        var openingByKey = {};
+        if (prev){
+          prev.rows.forEach(function(acc){
+            Object.keys(acc.byEntity || {}).forEach(function(company){
+              if (!includeCompany(company)) return;
+              var cell = acc.byEntity[company];
+              openingByKey[acc.mainAccountId + '|' + company] = {
+                name: acc.mainAccountName,
+                value: ccy === 'reporting' ? cell.reporting : cell.accounting,
+              };
+            });
+          });
         }
-        var movementByAccount = {};
-        (movementDoc ? movementDoc.rows : []).filter(function(m){ return m.entity === company; }).forEach(function(m){
-          movementByAccount[m.mainAccountId] = m;
+        var movementByKey = {};
+        (movementDoc ? movementDoc.rows : []).forEach(function(m){
+          if (!includeCompany(m.entity)) return;
+          movementByKey[m.mainAccountId + '|' + m.entity] = m;
         });
 
-        // Union of every account with a closing balance, an opening
-        // balance, or in-period movement -- an account that closes to
+        // Union of every (account, company) with a closing balance, an
+        // opening balance, or in-period movement -- a row that closes to
         // exactly zero this period (and so drops out of cur.rows) still
         // had a real opening balance and/or real movement that must not
         // be silently dropped from the table or its totals.
-        var accountIdSet = {};
-        Object.keys(closingByAccount).forEach(function(id){ accountIdSet[id] = true; });
-        Object.keys(openingByAccount).forEach(function(id){ accountIdSet[id] = true; });
-        Object.keys(movementByAccount).forEach(function(id){ accountIdSet[id] = true; });
-        var accountIds = Object.keys(accountIdSet).sort();
-        if (!accountIds.length){
-          renderEmpty('No activity', company + ' has no balances for ' + key + '.');
+        var keySet = {};
+        Object.keys(closingByKey).forEach(function(k){ keySet[k] = true; });
+        Object.keys(openingByKey).forEach(function(k){ keySet[k] = true; });
+        Object.keys(movementByKey).forEach(function(k){ keySet[k] = true; });
+        var keys = Object.keys(keySet).sort(function(a, b){
+          var pa = a.split('|'), pb = b.split('|');
+          if (pa[0] !== pb[0]) return pa[0] < pb[0] ? -1 : 1;
+          var oa = entityMetaByCode[pa[1]] ? entityMetaByCode[pa[1]].order : 999;
+          var ob = entityMetaByCode[pb[1]] ? entityMetaByCode[pb[1]].order : 999;
+          return oa - ob;
+        });
+        if (!keys.length){
+          renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' balances for ' + key + '.');
           return;
         }
 
         var thead = '<tr>' +
           '<th class="col-account">Main Account</th>' +
           '<th class="col-name">Main Account Name</th>' +
-          '<th>Opening Balance<span class="ccy-tag">' + ccyLabel + '</span></th>' +
-          '<th>Current Month Dr<span class="ccy-tag">' + ccyLabel + '</span></th>' +
-          '<th>Current Month Cr<span class="ccy-tag">' + ccyLabel + '</span></th>' +
-          '<th class="col-total">Closing Balance<span class="ccy-tag">' + ccyLabel + '</span></th>' +
+          '<th class="col-company">Company</th>' +
+          '<th>Opening Balance<span class="ccy-tag">' + headerCcyLabel + '</span></th>' +
+          '<th>Current Month Dr<span class="ccy-tag">' + headerCcyLabel + '</span></th>' +
+          '<th>Current Month Cr<span class="ccy-tag">' + headerCcyLabel + '</span></th>' +
+          (showTotals
+            ? '<th class="col-total">Closing Balance<span class="ccy-tag">' + headerCcyLabel + '</span></th>'
+            : '<th class="col-total na-note">Closing Balance<span class="ccy-tag">' + headerCcyLabel + '</span></th>') +
           '</tr>';
 
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
-        var exportRows = [['Main Account', 'Main Account Name', 'Opening Balance (' + ccyLabel + ')', 'Current Month Dr (' + ccyLabel + ')', 'Current Month Cr (' + ccyLabel + ')', 'Closing Balance (' + ccyLabel + ')']];
-        var bodyRows = accountIds.map(function(id){
+        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Opening Balance (' + headerCcyLabel + ')', 'Current Month Dr (' + headerCcyLabel + ')', 'Current Month Cr (' + headerCcyLabel + ')', 'Closing Balance (' + headerCcyLabel + ')']];
+        var bodyRows = keys.map(function(k){
+          var parts = k.split('|'), id = parts[0], company = parts[1];
           var isPl = parseInt(id, 10) >= 4000000;
-          var openingEntry = openingByAccount[id];
-          var closingEntry = closingByAccount[id];
-          var m = movementByAccount[id];
+          var openingEntry = openingByKey[k];
+          var closingEntry = closingByKey[k];
+          var m = movementByKey[k];
           var name = (closingEntry && closingEntry.name) || (openingEntry && openingEntry.name) || (m && m.mainAccountName) || '';
           var opening = (isPl && cur.doc.period === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
           var dr = m ? (ccy === 'reporting' ? m.debitReporting : m.debitAccounting) : 0;
@@ -1188,26 +1227,32 @@
           var closing = closingEntry ? closingEntry.value : 0;
 
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
-          exportRows.push([id, name, opening, dr, cr, closing]);
+          exportRows.push([id, name, company, opening, dr, cr, closing]);
 
           var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
           return '<tr>' +
             '<td class="col-account">' + escapeHtml(id) + '</td>' +
             '<td class="col-name">' + escapeHtml(name) + '</td>' +
+            '<td class="col-company">' + escapeHtml(company) + '<span class="ccy-tag">' + escapeHtml(rowCcyLabel(company)) + '</span></td>' +
             '<td class="' + fo.cls + '">' + fo.text + '</td>' +
             '<td class="' + fd.cls + '">' + fd.text + '</td>' +
             '<td class="' + fc.cls + '">' + fc.text + '</td>' +
             '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>' +
             '</tr>';
         }).join('');
-        exportRows.push(['Grand Total', '', totals.opening, totals.dr, totals.cr, totals.closing]);
 
         var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
-        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>' +
-          '<td class="' + fo.cls + '">' + fo.text + '</td>' +
-          '<td class="' + fd.cls + '">' + fd.text + '</td>' +
-          '<td class="' + fc.cls + '">' + fc.text + '</td>' +
-          '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
+        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-company"></td>';
+        if (showTotals){
+          footRow += '<td class="' + fo.cls + '">' + fo.text + '</td>' +
+            '<td class="' + fd.cls + '">' + fd.text + '</td>' +
+            '<td class="' + fc.cls + '">' + fc.text + '</td>' +
+            '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
+          exportRows.push(['Grand Total', '', '', totals.opening, totals.dr, totals.cr, totals.closing]);
+        } else {
+          footRow += '<td class="na-note">n/a</td><td class="na-note">n/a</td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
+          exportRows.push(['Grand Total', '', '', null, null, null, null]);
+        }
 
         reportHost.innerHTML =
           '<div class="table-card"><div class="table-scroll"><table>' +
@@ -1216,31 +1261,38 @@
             '<tfoot><tr>' + footRow + '</tr></tfoot>' +
           '</table></div></div>';
 
-        var netMovement = totals.dr - totals.cr;
-        var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
-        bannerHost.innerHTML = reconciles
-          ? '<div class="banner good"><strong>Reconciles:</strong>&nbsp;Opening + Dr &minus; Cr = Closing for ' + company + ', ' + periodLabelFromKey(key) + '.</div>'
-          : '<div class="banner"><strong>Note:</strong>&nbsp;Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.</div>';
+        if (!showTotals){
+          bannerHost.innerHTML =
+            '<div class="banner"><strong>All Companies &middot; Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see the Company column). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency, or pick a single company, to see them.</div>';
+        } else {
+          var netMovement = totals.dr - totals.cr;
+          var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
+          var subject = isAll ? 'all companies' : selectedCompany;
+          bannerHost.innerHTML = reconciles
+            ? '<div class="banner good"><strong>Reconciles:</strong>&nbsp;Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + '.</div>'
+            : '<div class="banner"><strong>Note:</strong>&nbsp;Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.</div>';
+        }
 
         notesHost.hidden = false;
-        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + company + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
+        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
 
         state.lastExport = {
           rows: exportRows,
-          filename: 'CompanyTB_' + company + '_' + key + '_' + ccy + '.xlsx',
+          filename: 'CompanyTB_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_' + ccy + '.xlsx',
         };
         exportBtn.disabled = false;
       }).catch(function(err){
         setStatus('Could not load company TB (' + errorText(err) + ')', true);
-        renderEmpty('Could not load data', 'Failed to load ' + company + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
+        renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
       });
     }
 
     function populate(entities){
-      companySelect.innerHTML = entities.map(function(e){
+      state.entities = entities;
+      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + entities.map(function(e){
         return '<option value="' + e.code + '">' + e.code + '</option>';
       }).join('');
-      if (!state.company && entities.length) state.company = entities[0].code;
+      if (!state.company) state.company = 'ALL';
       companySelect.value = state.company;
 
       periodSelect.innerHTML = index.map(function(p){
