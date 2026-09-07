@@ -400,6 +400,29 @@
   tfoot td.col-name{ left:96px; }
   tfoot td.col-total{ border-left:2px solid var(--total-row-border); }
 
+  tr.section-row td{
+    background:var(--surface-2);
+    color:var(--accent);
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    font-weight:800;
+    font-size:11.5px;
+    padding:10px 14px;
+    text-align:left;
+    border-bottom:1px solid var(--border);
+    position:static;
+  }
+  tr.subtotal-row td{
+    background:var(--total-row-bg);
+    border-top:2px solid var(--total-row-border);
+    border-bottom:2px solid var(--total-row-border);
+    font-weight:800;
+  }
+  tr.subtotal-row td.col-account, tr.subtotal-row td.col-name{
+    background:var(--total-row-bg);
+  }
+
   .empty-state{
     background:var(--surface);
     border:1px solid var(--border);
@@ -451,6 +474,7 @@
     <button type="button" data-view="consolidated" class="active" role="tab" aria-selected="true">Consolidated</button>
     <button type="button" data-view="company" role="tab" aria-selected="false">Company TB</button>
     <button type="button" data-view="currency" role="tab" aria-selected="false">By Currency</button>
+    <button type="button" data-view="intercompany" role="tab" aria-selected="false">Intercompany</button>
   </nav>
 </header>
 
@@ -574,6 +598,43 @@
   </main>
 </div>
 
+<!-- ============================== INTERCOMPANY RECONCILIATION ============================== -->
+<div class="view-panel" id="panel-intercompany" hidden>
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">Currency</span>
+      <div class="segmented" id="intercompany-ccy-toggle" role="group" aria-label="Currency basis">
+        <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
+        <button type="button" data-ccy="accounting">Accounting</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Period</span>
+      <select id="intercompany-period-select" aria-label="Fiscal year and period"></select>
+    </div>
+    <button type="button" class="btn-export" id="intercompany-export-btn" disabled>Export to Excel</button>
+    <div class="status-pill">
+      <span class="status-dot" id="intercompany-status-dot"></span>
+      <span id="intercompany-status-text">Connecting&hellip;</span>
+    </div>
+  </div>
+  <main>
+    <div id="intercompany-banner-host"></div>
+    <div id="intercompany-report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="intercompany-notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>Intercompany receivable accounts 1122001&ndash;1122999 and payable accounts 2112001&ndash;2112999, one row per counterparty account, cumulative since inception</span>
+      <span>Excludes Kayali-counterparty accounts (a related but separate brand/legal group) and any account with a zero balance for the selected period</span>
+      <span>Difference = Total Receivables + Total Payables &mdash; a nonzero difference flags an intercompany imbalance to investigate, not a data error</span>
+    </footer>
+  </main>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
@@ -628,6 +689,7 @@
     consolidated: document.getElementById('panel-consolidated'),
     company: document.getElementById('panel-company'),
     currency: document.getElementById('panel-currency'),
+    intercompany: document.getElementById('panel-intercompany'),
   };
   var initedViews = {};
   var pendingInits = []; // views requested before `index` was ready
@@ -641,6 +703,7 @@
     initedViews[view] = true;
     if (view === 'company') Company.init();
     if (view === 'currency') Currency.init();
+    if (view === 'intercompany') Intercompany.init();
   }
 
   function flushPendingInits(){
@@ -1453,6 +1516,261 @@
           var entities = (snap.exists && snap.data().entities) || [];
           state.entities = entities;
           populate(entities);
+        }).catch(function(err){
+          setStatus('Could not load company list (' + errorText(err) + ')', true);
+          renderEmpty('Could not connect', 'Failed to load the company list: ' + escapeHtml(errorText(err)) + '. Try reopening the report.');
+        });
+      },
+    };
+  })();
+
+  // ========================================================================
+  // INTERCOMPANY RECONCILIATION view -- one period at a time (like
+  // Consolidated), entities in columns, but split into two sections
+  // (intercompany receivable accounts 1122001-1122999, payable accounts
+  // 2112001-2112999) each with its own subtotal row, plus a Difference
+  // row (Total Receivables + Total Payables) in place of a single Grand
+  // Total -- payables are credit-normal (negative in this sign
+  // convention), so a fully reconciled intercompany book nets to zero.
+  // Kayali-counterparty accounts and any account with a zero balance for
+  // the selected period are already excluded server-side (see
+  // scripts/build_intercompany_periods.py).
+  // ========================================================================
+  var Intercompany = (function(){
+    var state = { periodKey: null, ccy: 'reporting', entities: [] };
+
+    var statusDot = document.getElementById('intercompany-status-dot');
+    var statusText = document.getElementById('intercompany-status-text');
+    var reportHost = document.getElementById('intercompany-report-host');
+    var bannerHost = document.getElementById('intercompany-banner-host');
+    var notesHost = document.getElementById('intercompany-notes-host');
+    var periodSelect = document.getElementById('intercompany-period-select');
+    var ccyToggle = document.getElementById('intercompany-ccy-toggle');
+    var exportBtn = document.getElementById('intercompany-export-btn');
+
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      bannerHost.innerHTML = '';
+      reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
+    }
+
+    function periodLabelFromKey(key){
+      var found = (index || []).filter(function(p){ return p.key === key; })[0];
+      return found ? periodLabel(found) : key;
+    }
+
+    function render(){
+      var key = state.periodKey, ccy = state.ccy;
+      if (!key) return;
+
+      setStatus('Loading ' + key + '…');
+      var entities = state.entities || [];
+      var showTotals = ccy === 'reporting';
+
+      loadShardedDoc('intercompany', key).then(function(cur){
+        if (!cur){
+          renderEmpty('No data for this period', 'The sync job has not produced an intercompany snapshot for <code>' + key + '</code> yet.');
+          return;
+        }
+
+        var receivables = cur.rows.filter(function(a){ return a.kind === 'receivable'; });
+        var payables = cur.rows.filter(function(a){ return a.kind === 'payable'; });
+        if (!receivables.length && !payables.length){
+          renderEmpty('No intercompany activity', 'No intercompany receivable or payable balances for ' + key + '.');
+          return;
+        }
+
+        var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
+        entities.forEach(function(e){
+          var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
+          thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
+        });
+        thead += showTotals
+          ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
+          : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
+        thead += '</tr>';
+
+        var exportHeader = ['Main Account', 'Main Account Name'].concat(entities.map(function(e){
+          return e.code + ' (' + (ccy === 'reporting' ? 'USD' : e.accountingCurrency) + ')';
+        }));
+        if (showTotals) exportHeader.push('Total (USD)');
+        var exportRows = [exportHeader];
+
+        function buildAccountRow(acc){
+          var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
+          var rowTotal = 0;
+          var exportRow = [acc.mainAccountId, acc.mainAccountName || ''];
+          var perEntity = {};
+          entities.forEach(function(e){
+            var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
+            var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
+            var f = fmtAmount(raw);
+            row += '<td class="' + f.cls + '">' + f.text + '</td>';
+            exportRow.push(raw === null ? null : raw);
+            perEntity[e.code] = raw || 0;
+            if (raw !== null && ccy === 'reporting') rowTotal += raw;
+          });
+          if (showTotals){
+            var ft = fmtAmount(rowTotal);
+            row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
+            exportRow.push(rowTotal);
+          } else {
+            row += '<td class="col-total na">n/a</td>';
+          }
+          exportRows.push(exportRow);
+          row += '</tr>';
+          return { html: row, perEntity: perEntity, total: rowTotal };
+        }
+
+        function buildSection(accounts, label, totalLabel){
+          var colCount = 2 + entities.length + 1;
+          var html = '<tr class="section-row"><td colspan="' + colCount + '">' + escapeHtml(label) + '</td></tr>';
+          exportRows.push([label]);
+          var totals = {};
+          entities.forEach(function(e){ totals[e.code] = 0; });
+          var grandTotal = 0;
+          accounts.forEach(function(acc){
+            var built = buildAccountRow(acc);
+            html += built.html;
+            entities.forEach(function(e){ totals[e.code] += built.perEntity[e.code] || 0; });
+            grandTotal += built.total;
+          });
+          var subtotalRow = '<tr class="subtotal-row"><td class="col-account">' + escapeHtml(totalLabel) + '</td><td class="col-name"></td>';
+          var exportSubtotalRow = [totalLabel, ''];
+          entities.forEach(function(e){
+            if (ccy === 'accounting'){
+              subtotalRow += '<td class="na-note">n/a</td>';
+              exportSubtotalRow.push(null);
+            } else {
+              var f = fmtAmount(totals[e.code]);
+              subtotalRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+              exportSubtotalRow.push(totals[e.code]);
+            }
+          });
+          if (showTotals){
+            var fg = fmtAmount(grandTotal);
+            subtotalRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
+            exportSubtotalRow.push(grandTotal);
+          } else {
+            subtotalRow += '<td class="col-total na">n/a</td>';
+          }
+          exportRows.push(exportSubtotalRow);
+          subtotalRow += '</tr>';
+          html += subtotalRow;
+          return { html: html, totals: totals, grandTotal: grandTotal };
+        }
+
+        var receivableSection = buildSection(receivables, 'Accounts Receivable Balances', 'Total Receivables');
+        var payableSection = buildSection(payables, 'Accounts Payable Balances', 'Total Payables');
+
+        var diffRow = '<td class="col-account">Difference</td><td class="col-name"></td>';
+        var exportDiffRow = ['Difference', ''];
+        var diffGrand = 0;
+        entities.forEach(function(e){
+          if (ccy === 'accounting'){
+            diffRow += '<td class="na-note">n/a</td>';
+            exportDiffRow.push(null);
+          } else {
+            var d = (receivableSection.totals[e.code] || 0) + (payableSection.totals[e.code] || 0);
+            var f = fmtAmount(d);
+            diffRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+            exportDiffRow.push(d);
+          }
+        });
+        if (showTotals){
+          diffGrand = receivableSection.grandTotal + payableSection.grandTotal;
+          var fd = fmtAmount(diffGrand);
+          diffRow += '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>';
+          exportDiffRow.push(diffGrand);
+        } else {
+          diffRow += '<td class="col-total na">n/a</td>';
+        }
+        exportRows.push(exportDiffRow);
+
+        reportHost.innerHTML =
+          '<div class="table-card"><div class="table-scroll"><table>' +
+            '<thead>' + thead + '</thead>' +
+            '<tbody>' + receivableSection.html + payableSection.html + '</tbody>' +
+            '<tfoot><tr>' + diffRow + '</tr></tfoot>' +
+          '</table></div></div>';
+
+        notesHost.hidden = false;
+        if (ccy === 'accounting'){
+          bannerHost.innerHTML =
+            '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals and Difference are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency to see them.</div>';
+        } else {
+          var reconciled = Math.abs(diffGrand) < 1;
+          bannerHost.innerHTML = reconciled
+            ? '<div class="banner good"><strong>Reconciled:</strong>&nbsp;Total Receivables + Total Payables nets to zero for ' + periodLabelFromKey(key) + '.</div>'
+            : '<div class="banner"><strong>Note:</strong>&nbsp;Total Receivables + Total Payables does not net to zero for ' + periodLabelFromKey(key) + ' (' + fmtAmount(diffGrand).text + ') &mdash; an intercompany imbalance to investigate, not a data error.</div>';
+        }
+
+        setStatus('FY' + cur.doc.fiscalYear + ' P' + cur.doc.period + ' · ' + (receivables.length + payables.length) + ' accounts', false);
+
+        state.lastExport = {
+          rows: exportRows,
+          filename: 'IntercompanyReconciliation_' + key + '_' + ccy + '.xlsx',
+        };
+        exportBtn.disabled = false;
+      }).catch(function(err){
+        setStatus('Could not load intercompany data (' + errorText(err) + ')', true);
+        renderEmpty('Could not load data', 'Failed to load intercompany data for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period, or reopen the report.');
+      });
+    }
+
+    function populatePeriods(){
+      var prevSelection = periodSelect.value;
+      periodSelect.innerHTML = index.map(function(p){
+        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
+      }).join('');
+      var toSelect = index.some(function(p){ return p.key === prevSelection; }) ? prevSelection : index[0].key;
+      periodSelect.value = toSelect;
+      state.periodKey = toSelect;
+      render();
+    }
+
+    periodSelect.addEventListener('change', function(){
+      state.periodKey = periodSelect.value;
+      render();
+    });
+
+    ccyToggle.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-ccy]');
+      if (!btn) return;
+      state.ccy = btn.getAttribute('data-ccy');
+      Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'Intercompany', state.lastExport.rows, exportBtn);
+    });
+
+    return {
+      init: function(){
+        if (!index || !index.length){
+          renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet.');
+          setStatus('No data yet', true);
+          return;
+        }
+        if (!state.periodKey) state.periodKey = index[0].key;
+        setStatus('Loading company roster…');
+        docOnce(db.doc('tb/' + state.periodKey)).then(function(snap){
+          // NOTE: snapshot documents are frozen -- never write to snap.data()
+          // or to anything obtained from it; keep any roster you need to
+          // reuse in this module's own `state` instead.
+          state.entities = (snap.exists && snap.data().entities) || [];
+          populatePeriods();
         }).catch(function(err){
           setStatus('Could not load company list (' + errorText(err) + ')', true);
           renderEmpty('Could not connect', 'Failed to load the company list: ' + escapeHtml(errorText(err)) + '. Try reopening the report.');

@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""
+Shard the per-period report_<key>.json files (from
+build_intercompany_periods.py) into write_db-ready "period doc" + "shard
+doc" files for the "intercompany" collection, mirroring
+prepare_backfill_writes.py's approach for the "tb" collection.
+
+Usage:
+  python3 scripts/prepare_intercompany_writes.py --in-dir /tmp/intercompany_out --out-dir /tmp/intercompany_out/writes
+"""
+import argparse
+import json
+from pathlib import Path
+
+MAX_DOC_BYTES = 200 * 1024
+MAX_WRITES_PER_BATCH = 50
+MAX_BATCH_BYTES = 800 * 1024
+
+
+def shard_accounts(accounts):
+    shards, current = [], []
+    for acc in accounts:
+        current.append(acc)
+        if len(json.dumps({"rows": current})) > MAX_DOC_BYTES:
+            current.pop()
+            if not current:
+                raise SystemExit(f"Account {acc.get('mainAccountId')} alone exceeds the per-document size limit")
+            shards.append(current)
+            current = [acc]
+    if current:
+        shards.append(current)
+    return shards or [[]]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--in-dir", required=True)
+    parser.add_argument("--out-dir", required=True)
+    args = parser.parse_args()
+
+    in_dir = Path(args.in_dir)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(in_dir / "summary.json") as f:
+        periods = json.load(f)["periods"]
+
+    all_writes = []
+
+    for key in periods:
+        with open(in_dir / f"report_{key}.json") as f:
+            report = json.load(f)
+
+        shards = shard_accounts(report["accounts"])
+        period_doc = {"fiscalYear": report["fiscalYear"], "period": report["period"], "shardCount": len(shards)}
+
+        period_file = out_dir / f"period_{key}.json"
+        with open(period_file, "w") as f:
+            json.dump(period_doc, f)
+        all_writes.append({"op": "set", "collection": "intercompany", "doc_id": key, "file_path": str(period_file), "_bytes": period_file.stat().st_size})
+
+        for i, shard in enumerate(shards):
+            shard_file = out_dir / f"shard_{key}_{i}.json"
+            with open(shard_file, "w") as f:
+                json.dump({"rows": shard}, f)
+            all_writes.append({"op": "set", "collection": f"intercompany/{key}/shards", "doc_id": str(i), "file_path": str(shard_file), "_bytes": shard_file.stat().st_size})
+
+    batches = []
+    current, current_bytes = [], 0
+    for w in all_writes:
+        wbytes = w.pop("_bytes")
+        if current and (len(current) >= MAX_WRITES_PER_BATCH or current_bytes + wbytes > MAX_BATCH_BYTES):
+            batches.append(current)
+            current, current_bytes = [], 0
+        current.append(w)
+        current_bytes += wbytes
+    if current:
+        batches.append(current)
+
+    with open(out_dir / "batches.json", "w") as f:
+        json.dump({"batches": batches, "totalWrites": len(all_writes)}, f, indent=2)
+
+    print(f"{len(periods)} periods, {len(all_writes)} document writes across {len(batches)} batches")
+
+
+if __name__ == "__main__":
+    main()

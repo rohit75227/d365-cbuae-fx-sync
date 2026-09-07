@@ -35,7 +35,7 @@ history describing a service-principal / REST API approach, that was the
 original plan before the connector turned out to already be available —
 it's been replaced.
 
-## The three views
+## The four views
 
 - **Consolidated** — the original view: Main Account × company columns,
   Grand Total, reporting/accounting currency toggle, one period at a time.
@@ -56,6 +56,23 @@ it's been replaced.
   `currencytb` (closing balances) and `currencymovement` (Dr/Cr), both from
   `sql/monthly_movement_by_currency.sql`. Also does not include simulated
   adjustments.
+- **Intercompany Reconciliation** (added 2026-09-07) — one period at a time,
+  Main Account × company columns like Consolidated, but split into two
+  sections (intercompany receivable accounts `1122001`-`1122999`, payable
+  accounts `2112001`-`2112999`), each with its own subtotal row, plus a
+  Difference row (Total Receivables + Total Payables — payables are
+  credit-normal/negative in this sign convention, so a fully reconciled book
+  nets to zero; in practice it currently does not, which is the whole point
+  of the tab). Kayali-counterparty accounts (a related but separate
+  brand/legal group) and any account with a zero balance for the selected
+  period are excluded server-side, before the data ever reaches the
+  `intercompany` collection. Backed by `sql/intercompany_movement.sql` +
+  `scripts/build_intercompany_periods.py` (see "What's here" below) — unlike
+  the other three collections this one is built by forward-summing ONE
+  fetch of full-history monthly movement rather than a per-period
+  cumulative query, since the account universe is narrow enough (~80
+  accounts, ~5,600 movement rows across all history as of 2026-09-07) to fit
+  in a single un-paginated query.
 
 **2026-09-04, later same day: fixed Company TB / By Currency hanging on
 "Connecting...".** Both tabs' one-shot reads used `.get()` with no error
@@ -114,6 +131,28 @@ exactly with `currencytb`'s closing balances before pushing.
 - `scripts/prepare_movement_writes.py` / `scripts/prepare_currency_writes.py`
   — shard `movement`/`currencytb` period JSON into write_db-ready batches,
   mirroring `prepare_backfill_writes.py` for `tb`.
+- `sql/intercompany_movement.sql` — monthly Dr/Cr movement for the
+  intercompany receivable (`1122001`-`1122999`) and payable
+  (`2112001`-`2112999`) account ranges only, Kayali-named accounts already
+  excluded (`LOWER(ma.name) NOT LIKE '%kayali%'`) — feeds the Intercompany
+  Reconciliation tab.
+- `scripts/build_intercompany_periods.py` — forward-sums that ONE query's
+  full-history monthly movement into a per-period cumulative balance for
+  every period from FY2019 P1 through the given `--latest-ym` (both account
+  ranges are pure Balance Sheet, cumulative-since-inception, no P&L
+  year-reset needed). Because the whole history is fetched fresh in one
+  query rather than blended with an old stored baseline, this is NOT the
+  "incremental build is unsound against backdating" trap described below —
+  it's algebraically identical to a direct cumulative-to-date query at every
+  period end, just far cheaper given the narrow account universe. Drops an
+  account from a period's output entirely if every entity's balance is
+  ~0.00 that period (report requirement: no zero-balance rows) — unlike
+  `tb`, which keeps zero accounts so they don't disappear and reappear
+  across periods.
+- `scripts/prepare_intercompany_writes.py` — shards
+  `build_intercompany_periods.py`'s per-period JSON into write_db-ready
+  batches for the `intercompany` collection, mirroring
+  `prepare_backfill_writes.py` for `tb`.
 
 ## Daily refresh
 
@@ -164,6 +203,26 @@ otherwise. The correct daily procedure updates **all four collections**:
      `currencytb` correctly never does).
 4. Update `tb/index`: replace the entry for this period's key with a fresh
    `generatedAt`, keep every other entry, write back.
+5. **Refresh `intercompany` for the current period** (added 2026-09-07,
+   feeds the Intercompany Reconciliation tab): re-run
+   `sql/intercompany_movement.sql` in full (no date range — it fetches
+   every month of history in one un-paginated query, ~5,600 rows as of
+   2026-09-07, comfortably under the 12,288-row cap) via
+   `execute_sql_read_only`, then `python3
+   scripts/build_intercompany_periods.py <raw_file> --out-dir <dir>
+   --latest-ym <this period's YYYY-MM>` (this rebuilds every period
+   2019-01 through the current one from scratch, not just the current
+   period — cheap given the narrow account universe, and it means a
+   backdated correction anywhere in intercompany's history self-corrects
+   every sync without a separate spot-check), then
+   `scripts/prepare_intercompany_writes.py` → write_db batches for every
+   period whose `report_<key>.json` output actually changed (comparing
+   against what's currently stored is optional but keeps the batch count
+   down — writing every period unconditionally is also correct, just
+   pricier). Cross-check the current period's intercompany accounts against
+   `tb`'s own values for those same mainaccountids (sum should match
+   exactly, since `intercompany` is a subset of `tb`'s account universe
+   minus Kayali) before considering this step done.
 
 **Connector response cell shape has changed since these scripts were
 written, and can vary by call.** The claude-databricks-connector has been
