@@ -604,6 +604,10 @@
 <div class="view-panel" id="panel-intercompany" hidden>
   <div class="controls">
     <div class="control-group">
+      <span class="eyebrow">Company</span>
+      <select id="intercompany-company-select" aria-label="Company"></select>
+    </div>
+    <div class="control-group">
       <span class="eyebrow">Currency</span>
       <div class="segmented" id="intercompany-ccy-toggle" role="group" aria-label="Currency basis">
         <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
@@ -630,9 +634,10 @@
     </div>
     <footer class="notes" id="intercompany-notes-host" hidden>
       <span class="wordmark">Huda Beauty</span>
-      <span>Intercompany receivable accounts 1122001&ndash;1122999 and payable accounts 2112001&ndash;2112999, one row per counterparty account, cumulative since inception</span>
-      <span>Excludes Kayali-counterparty accounts (a related but separate brand/legal group) and any account with a zero balance for the selected period</span>
-      <span>Difference = Total Receivables + Total Payables &mdash; a nonzero difference flags an intercompany imbalance to investigate, not a data error</span>
+      <span>One row per (Company, Offset Company) intercompany relationship: Accounts Receivable is the Company's own receivable-from-Offset-Company balance; Payable Amount is the Offset Company's own payable-to-Company balance &mdash; the two sides of the same relationship, each from that company's own books</span>
+      <span>Only covers relationships between the 16 tracked operating entities &mdash; balances against Kayali (a related but separate brand/legal group) or any other related party outside those 16 are not shown here</span>
+      <span>Difference = Accounts Receivable + Payable Amount &mdash; a nonzero difference flags an intercompany imbalance to investigate (including one side booked without the other), not a data error</span>
+      <span>The Company filter narrows which company's own receivable balances are shown as the main row, not the offset side</span>
     </footer>
   </main>
 </div>
@@ -1577,25 +1582,82 @@
   })();
 
   // ========================================================================
-  // INTERCOMPANY RECONCILIATION view -- one period at a time (like
-  // Consolidated), entities in columns, but split into two sections
-  // (intercompany receivable accounts 1122001-1122999, payable accounts
-  // 2112001-2112999) each with its own subtotal row, plus a Difference
-  // row (Total Receivables + Total Payables) in place of a single Grand
-  // Total -- payables are credit-normal (negative in this sign
-  // convention), so a fully reconciled intercompany book nets to zero.
-  // Kayali-counterparty accounts and any account with a zero balance for
-  // the selected period are already excluded server-side (see
-  // scripts/build_intercompany_periods.py).
+  // INTERCOMPANY RECONCILIATION view -- one row per (Company, Offset
+  // Company) relationship: Accounts Receivable is Company's own
+  // receivable-from-Offset-Company balance (Company's own books); Payable
+  // Amount is Offset Company's own payable-to-Company balance (Offset
+  // Company's own books) -- the two sides of the same relationship, each
+  // from that company's own books, side by side so a gap between them
+  // (one side booked and not the other, or booked for a different
+  // amount) is visible directly.
+  //
+  // The `intercompany` collection only carries account IDs/names -- which
+  // entity a given 1122xxx/2112xxx account's balance is actually WITH is
+  // encoded solely in the account's NAME ("Accounts Receivable - Huda
+  // Beauty DMCC" etc.), never as structured data upstream.
+  // COUNTERPARTY_BY_ACCOUNT is a hand-verified account-ID -> tracked-
+  // entity-code map (cross-checked against hb_catalog.db_bronze_d365
+  // .ledger's own `description` column for the three non-obvious ones --
+  // HBBV = "Huda Beauty Limited" i.e. the accounts named "Huda Beauty
+  // Ltd"/"LTD", HBFM = "Huda Beauty Family LLC" i.e. "HB Family LLC", HBIM
+  // = "HBI Management Holdco, LLC" -- confirmed live 2026-09-08, and
+  // against a fresh full mainaccount fetch the same day, since an earlier
+  // one from 2026-09-07 had already gone one row stale by the 8th).
+  // Accounts naming a related party OUTSIDE the 16 tracked entities
+  // (Kayali entities are already excluded upstream in
+  // intercompany_movement.sql; also HB Investments LLC, HB Invest Co.
+  // DMCC, HB Entertainment DMCC, HB Rocket LLC, HB Angels, HB Ireland,
+  // Ketish DMCC, Huda Kattan, Adamas Bidco/Topco, the generic "Accounts
+  // Receivable/Payable - Intercompany" buckets, and "IPIAA Payable
+  // (Vested)") are deliberately left out of this map -- there's no second
+  // set of books to reconcile them against, so they don't appear in this
+  // view (they're still real rows in the raw `intercompany` data; this
+  // view just isn't the place to show them).
   // ========================================================================
+  var COUNTERPARTY_BY_ACCOUNT = {
+    '1122002': 'HBAQ', '1122102': 'HBAQ',
+    '1122003': 'HBBV', '1122103': 'HBBV',
+    '1122004': 'HBCQ', '1122104': 'HBCQ',
+    '1122005': 'HBDM', '1122105': 'HBDM',
+    '1122106': 'HBFM',
+    '1122007': 'HBFR', '1122107': 'HBFR',
+    '1122008': 'HBFZ', '1122108': 'HBFZ',
+    '1122009': 'HBIN', '1122109': 'HBIN',
+    '1122010': 'HBLL', '1122110': 'HBLL',
+    '1122011': 'HBPN', '1122111': 'HBPN',
+    '1122012': 'HBUK', '1122112': 'HBUK',
+    '1122013': 'HBUS', '1122113': 'HBUS',
+    '1122120': 'HBIM',
+    '1122124': 'HBCB',
+    '1122125': 'HBDS',
+    '1122136': 'HBSG',
+    '2112002': 'HBAQ', '2112102': 'HBAQ',
+    '2112003': 'HBBV', '2112103': 'HBBV',
+    '2112004': 'HBCQ', '2112104': 'HBCQ',
+    '2112005': 'HBDM', '2112105': 'HBDM',
+    '2112006': 'HBFM', '2112106': 'HBFM',
+    '2112007': 'HBFR', '2112107': 'HBFR',
+    '2112008': 'HBFZ', '2112108': 'HBFZ',
+    '2112009': 'HBIN', '2112109': 'HBIN',
+    '2112010': 'HBLL', '2112110': 'HBLL',
+    '2112011': 'HBPN', '2112111': 'HBPN',
+    '2112012': 'HBUK', '2112112': 'HBUK',
+    '2112013': 'HBUS', '2112113': 'HBUS',
+    '2112120': 'HBIM',
+    '2112122': 'HBCB',
+    '2112123': 'HBDS',
+    '2112136': 'HBSG',
+  };
+
   var Intercompany = (function(){
-    var state = { periodKey: null, ccy: 'reporting', entities: [] };
+    var state = { periodKey: null, ccy: 'reporting', company: 'ALL', entities: [] };
 
     var statusDot = document.getElementById('intercompany-status-dot');
     var statusText = document.getElementById('intercompany-status-text');
     var reportHost = document.getElementById('intercompany-report-host');
     var bannerHost = document.getElementById('intercompany-banner-host');
     var notesHost = document.getElementById('intercompany-notes-host');
+    var companySelect = document.getElementById('intercompany-company-select');
     var periodSelect = document.getElementById('intercompany-period-select');
     var ccyToggle = document.getElementById('intercompany-ccy-toggle');
     var exportBtn = document.getElementById('intercompany-export-btn');
@@ -1619,11 +1681,14 @@
     }
 
     function render(){
-      var key = state.periodKey, ccy = state.ccy;
+      var key = state.periodKey, ccy = state.ccy, selectedCompany = state.company;
       if (!key) return;
 
-      setStatus('Loading ' + key + '…');
-      var entities = state.entities || [];
+      var isAll = selectedCompany === 'ALL';
+      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + key + '…');
+
+      var entityMetaByCode = {};
+      (state.entities || []).forEach(function(e, i){ entityMetaByCode[e.code] = { meta: e, order: i }; });
       var showTotals = ccy === 'reporting';
 
       loadShardedDoc('intercompany', key).then(function(cur){
@@ -1632,143 +1697,150 @@
           return;
         }
 
-        var receivables = cur.rows.filter(function(a){ return a.kind === 'receivable'; });
-        var payables = cur.rows.filter(function(a){ return a.kind === 'payable'; });
-        if (!receivables.length && !payables.length){
-          renderEmpty('No intercompany activity', 'No intercompany receivable or payable balances for ' + key + '.');
+        // byPair["company|counterparty"] = { value, accountIds: [] }, kept
+        // separately for receivable and payable so each side always comes
+        // from that company's OWN books (never blended across the two
+        // account ranges).
+        var arByPair = {};
+        var apByPair = {};
+        cur.rows.forEach(function(acc){
+          var counterparty = COUNTERPARTY_BY_ACCOUNT[acc.mainAccountId];
+          if (!counterparty || !entityMetaByCode[counterparty]) return; // untracked related party or generic bucket
+          var target = acc.kind === 'receivable' ? arByPair : (acc.kind === 'payable' ? apByPair : null);
+          if (!target) return;
+          Object.keys(acc.byEntity || {}).forEach(function(company){
+            if (company === counterparty || !entityMetaByCode[company]) return;
+            var cell = acc.byEntity[company];
+            var raw = ccy === 'reporting' ? cell.reporting : cell.accounting;
+            if (raw === null || raw === undefined) return;
+            var pairKey = company + '|' + counterparty;
+            var entry = target[pairKey] || (target[pairKey] = { value: 0, accountIds: [] });
+            entry.value += raw;
+            entry.accountIds.push(acc.mainAccountId);
+          });
+        });
+
+        // Union of every (company, counterparty) pair with EITHER side
+        // booked -- a payable booked with no matching receivable (or vice
+        // versa) is exactly the kind of gap this view exists to surface,
+        // so it must still get a row rather than being silently dropped.
+        var pairKeySet = {};
+        Object.keys(arByPair).forEach(function(k){ pairKeySet[k] = true; });
+        Object.keys(apByPair).forEach(function(k){
+          var parts = k.split('|'); // apByPair's key is "offsetCompany|company" from AP's own perspective
+          pairKeySet[parts[1] + '|' + parts[0]] = true;
+        });
+
+        var pairKeys = Object.keys(pairKeySet).filter(function(k){
+          var mainCompany = k.split('|')[0];
+          return isAll || mainCompany === selectedCompany;
+        }).sort(function(a, b){
+          var pa = a.split('|'), pb = b.split('|');
+          var oa = entityMetaByCode[pa[0]].order, ob = entityMetaByCode[pb[0]].order;
+          if (oa !== ob) return oa - ob;
+          return entityMetaByCode[pa[1]].order - entityMetaByCode[pb[1]].order;
+        });
+
+        var rows = pairKeys.map(function(k){
+          var parts = k.split('|'), company = parts[0], counterparty = parts[1];
+          var arEntry = arByPair[k];
+          var apEntry = apByPair[counterparty + '|' + company];
+          return {
+            company: company,
+            counterparty: counterparty,
+            arValue: arEntry ? arEntry.value : 0,
+            arAccountIds: arEntry ? arEntry.accountIds : [],
+            payableValue: apEntry ? apEntry.value : 0,
+            apAccountIds: apEntry ? apEntry.accountIds : [],
+          };
+        }).filter(function(r){
+          return Math.round(Math.abs(r.arValue) * 100) !== 0 || Math.round(Math.abs(r.payableValue) * 100) !== 0;
+        });
+
+        if (!rows.length){
+          renderEmpty('No intercompany activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' intercompany relationships for ' + key + '.');
           return;
         }
 
-        var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
-        entities.forEach(function(e){
-          var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
-          thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
-        });
-        thead += showTotals
-          ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
-          : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
-        thead += '</tr>';
+        function ccyLabelFor(code){
+          if (ccy === 'reporting') return 'USD';
+          var found = entityMetaByCode[code];
+          return found ? found.meta.accountingCurrency : '';
+        }
 
-        var exportHeader = ['Main Account', 'Main Account Name'].concat(entities.map(function(e){
-          return e.code + ' (' + (ccy === 'reporting' ? 'USD' : e.accountingCurrency) + ')';
-        }));
-        if (showTotals) exportHeader.push('Total (USD)');
+        var thead = '<tr>' +
+          '<th class="col-company">Company</th>' +
+          '<th>Accounts Receivable<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
+          '<th class="col-company">Offset Company</th>' +
+          '<th>Payable Amount<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
+          (showTotals
+            ? '<th class="col-total">Difference<span class="ccy-tag">USD</span></th>'
+            : '<th class="col-total na-note">Difference<span class="ccy-tag">mixed ccy</span></th>') +
+          '</tr>';
+
+        var exportHeader = ['Company', 'Accounts Receivable (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Payable Amount (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (showTotals ? ' (USD)' : '')];
         var exportRows = [exportHeader];
 
-        function buildAccountRow(acc){
-          var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
-          var rowTotal = 0;
-          var exportRow = [acc.mainAccountId, acc.mainAccountName || ''];
-          var perEntity = {};
-          entities.forEach(function(e){
-            var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
-            var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
-            var f = fmtAmount(raw);
-            row += '<td class="' + f.cls + '">' + f.text + '</td>';
-            exportRow.push(raw === null ? null : raw);
-            perEntity[e.code] = raw || 0;
-            if (raw !== null && ccy === 'reporting') rowTotal += raw;
-          });
+        var totals = { ar: 0, payable: 0, diff: 0 };
+        var bodyRows = rows.map(function(r){
+          var difference = r.arValue + r.payableValue;
+          totals.ar += r.arValue; totals.payable += r.payableValue; totals.diff += difference;
+
+          var fAr = fmtAmount(r.arValue), fPay = fmtAmount(r.payableValue);
+          var arTitle = r.arAccountIds.length ? ' title="Account(s): ' + escapeAttr(r.arAccountIds.join(', ')) + '"' : '';
+          var payTitle = r.apAccountIds.length ? ' title="Account(s): ' + escapeAttr(r.apAccountIds.join(', ')) + '"' : '';
+
+          exportRows.push([r.company, r.arValue, r.counterparty, r.payableValue, showTotals ? difference : null]);
+
+          var row = '<tr>' +
+            '<td class="col-company">' + escapeHtml(r.company) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.company)) + '</span></td>' +
+            '<td class="' + fAr.cls + '"' + arTitle + '>' + fAr.text + '</td>' +
+            '<td class="col-company">' + escapeHtml(r.counterparty) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.counterparty)) + '</span></td>' +
+            '<td class="' + fPay.cls + '"' + payTitle + '>' + fPay.text + '</td>';
           if (showTotals){
-            var ft = fmtAmount(rowTotal);
-            row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
-            exportRow.push(rowTotal);
+            var fd = fmtAmount(difference);
+            row += '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>';
           } else {
             row += '<td class="col-total na">n/a</td>';
           }
-          exportRows.push(exportRow);
           row += '</tr>';
-          return { html: row, perEntity: perEntity, total: rowTotal };
-        }
+          return row;
+        }).join('');
 
-        function buildSection(accounts, label, totalLabel){
-          var colCount = 2 + entities.length + 1;
-          var html = '<tr class="section-row"><td colspan="' + colCount + '">' + escapeHtml(label) + '</td></tr>';
-          exportRows.push([label]);
-          var totals = {};
-          entities.forEach(function(e){ totals[e.code] = 0; });
-          var grandTotal = 0;
-          accounts.forEach(function(acc){
-            var built = buildAccountRow(acc);
-            html += built.html;
-            entities.forEach(function(e){ totals[e.code] += built.perEntity[e.code] || 0; });
-            grandTotal += built.total;
-          });
-          var subtotalRow = '<tr class="subtotal-row"><td class="col-account">' + escapeHtml(totalLabel) + '</td><td class="col-name"></td>';
-          var exportSubtotalRow = [totalLabel, ''];
-          entities.forEach(function(e){
-            if (ccy === 'accounting'){
-              subtotalRow += '<td class="na-note">n/a</td>';
-              exportSubtotalRow.push(null);
-            } else {
-              var f = fmtAmount(totals[e.code]);
-              subtotalRow += '<td class="' + f.cls + '">' + f.text + '</td>';
-              exportSubtotalRow.push(totals[e.code]);
-            }
-          });
-          if (showTotals){
-            var fg = fmtAmount(grandTotal);
-            subtotalRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
-            exportSubtotalRow.push(grandTotal);
-          } else {
-            subtotalRow += '<td class="col-total na">n/a</td>';
-          }
-          exportRows.push(exportSubtotalRow);
-          subtotalRow += '</tr>';
-          html += subtotalRow;
-          return { html: html, totals: totals, grandTotal: grandTotal };
-        }
-
-        var receivableSection = buildSection(receivables, 'Accounts Receivable Balances', 'Total Receivables');
-        var payableSection = buildSection(payables, 'Accounts Payable Balances', 'Total Payables');
-
-        var diffRow = '<td class="col-account">Difference</td><td class="col-name"></td>';
-        var exportDiffRow = ['Difference', ''];
-        var diffGrand = 0;
-        entities.forEach(function(e){
-          if (ccy === 'accounting'){
-            diffRow += '<td class="na-note">n/a</td>';
-            exportDiffRow.push(null);
-          } else {
-            var d = (receivableSection.totals[e.code] || 0) + (payableSection.totals[e.code] || 0);
-            var f = fmtAmount(d);
-            diffRow += '<td class="' + f.cls + '">' + f.text + '</td>';
-            exportDiffRow.push(d);
-          }
-        });
+        var footRow = '<td class="col-company">Grand Total</td>';
         if (showTotals){
-          diffGrand = receivableSection.grandTotal + payableSection.grandTotal;
-          var fd = fmtAmount(diffGrand);
-          diffRow += '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>';
-          exportDiffRow.push(diffGrand);
+          var fAt = fmtAmount(totals.ar), fPt = fmtAmount(totals.payable), fDt = fmtAmount(totals.diff);
+          footRow += '<td class="' + fAt.cls + '">' + fAt.text + '</td><td class="col-company"></td><td class="' + fPt.cls + '">' + fPt.text + '</td><td class="col-total ' + fDt.cls + '">' + fDt.text + '</td>';
+          exportRows.push(['Grand Total', totals.ar, '', totals.payable, totals.diff]);
         } else {
-          diffRow += '<td class="col-total na">n/a</td>';
+          footRow += '<td class="na-note">n/a</td><td class="col-company"></td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
+          exportRows.push(['Grand Total', null, '', null, null]);
         }
-        exportRows.push(exportDiffRow);
 
         reportHost.innerHTML =
           '<div class="table-card"><div class="table-scroll"><table>' +
             '<thead>' + thead + '</thead>' +
-            '<tbody>' + receivableSection.html + payableSection.html + '</tbody>' +
-            '<tfoot><tr>' + diffRow + '</tr></tfoot>' +
+            '<tbody>' + bodyRows + '</tbody>' +
+            '<tfoot><tr>' + footRow + '</tr></tfoot>' +
           '</table></div></div>';
 
-        notesHost.hidden = false;
-        if (ccy === 'accounting'){
+        if (!showTotals){
           bannerHost.innerHTML =
-            '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals and Difference are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency to see them.</div>';
+            '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;Company and Offset Company can each be in a different local currency (see the ccy tag under each), so Accounts Receivable and Payable Amount are not always directly comparable and Difference is hidden &mdash; switch to Reporting Currency to see it.</div>';
         } else {
-          var reconciled = Math.abs(diffGrand) < 1;
+          var reconciled = Math.abs(totals.diff) < 1;
+          var subject = isAll ? 'all companies' : selectedCompany;
           bannerHost.innerHTML = reconciled
-            ? '<div class="banner good"><strong>Reconciled:</strong>&nbsp;Total Receivables + Total Payables nets to zero for ' + periodLabelFromKey(key) + '.</div>'
-            : '<div class="banner"><strong>Note:</strong>&nbsp;Total Receivables + Total Payables does not net to zero for ' + periodLabelFromKey(key) + ' (' + fmtAmount(diffGrand).text + ') &mdash; an intercompany imbalance to investigate, not a data error.</div>';
+            ? '<div class="banner good"><strong>Reconciled:</strong>&nbsp;Accounts Receivable + Payable Amount nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.</div>'
+            : '<div class="banner"><strong>Note:</strong>&nbsp;Accounts Receivable + Payable Amount does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ') &mdash; an intercompany imbalance to investigate, not a data error.</div>';
         }
 
-        setStatus('FY' + cur.doc.fiscalYear + ' P' + cur.doc.period + ' · ' + (receivables.length + payables.length) + ' accounts', false);
+        notesHost.hidden = false;
+        setStatus('FY' + cur.doc.fiscalYear + ' P' + cur.doc.period + ' · ' + rows.length + ' relationship' + (rows.length === 1 ? '' : 's'), false);
 
         state.lastExport = {
           rows: exportRows,
-          filename: 'IntercompanyReconciliation_' + key + '_' + ccy + '.xlsx',
+          filename: 'IntercompanyReconciliation_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_' + ccy + '.xlsx',
         };
         exportBtn.disabled = false;
       }).catch(function(err){
@@ -1777,17 +1849,24 @@
       });
     }
 
-    function populatePeriods(){
-      var prevSelection = periodSelect.value;
+    function populate(entities){
+      state.entities = entities;
+      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + entities.map(function(e){
+        return '<option value="' + e.code + '">' + e.code + '</option>';
+      }).join('');
+      if (!state.company) state.company = 'ALL';
+      companySelect.value = state.company;
+
       periodSelect.innerHTML = index.map(function(p){
         return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
       }).join('');
-      var toSelect = index.some(function(p){ return p.key === prevSelection; }) ? prevSelection : index[0].key;
-      periodSelect.value = toSelect;
-      state.periodKey = toSelect;
+      if (!state.periodKey) state.periodKey = index[0].key;
+      periodSelect.value = state.periodKey;
+
       render();
     }
 
+    companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
     periodSelect.addEventListener('change', function(){
       state.periodKey = periodSelect.value;
       render();
@@ -1821,8 +1900,7 @@
           // NOTE: snapshot documents are frozen -- never write to snap.data()
           // or to anything obtained from it; keep any roster you need to
           // reuse in this module's own `state` instead.
-          state.entities = (snap.exists && snap.data().entities) || [];
-          populatePeriods();
+          populate((snap.exists && snap.data().entities) || []);
         }).catch(function(err){
           setStatus('Could not load company list (' + errorText(err) + ')', true);
           renderEmpty('Could not connect', 'Failed to load the company list: ' + escapeHtml(errorText(err)) + '. Try reopening the report.');
