@@ -443,22 +443,32 @@ here on (and any future full backfill run via that script) picks it up
 automatically, sized dynamically from that period's own raw HBFR total,
 same as HBCB/HBUK.
 
-**The already-stored `tb` documents for 2021-01 through 2026-09 (69
-periods) were generated before this fix existed and do not yet carry the
-adjustment** — confirmed via `tb/2021-01`, which still shows the raw
-+2,443.07 USD-only gap with no HBFR entry in `simulatedAdjustments`.
-Backfilling those 69 stored periods requires ~270 individual database
-reads/writes (unlike the code change above, this touches live report
-data other viewers see), so that backfill was flagged for explicit
-confirmation before running rather than applied automatically — see the
-report-owner exchange in this artifact's comment thread on the
-Consolidated tab's Jan 2021 HBFR cell. Once confirmed, update this note
-with the date it was run. Because each subsequent fiscal year has its own
-such revaluation activity that can similarly miss its own close, the gap
-**compounds year over year** rather than staying fixed at ~$2,443 — this
-means the backfill, once run, needs one adjustment per period (not one
-fixed figure copied everywhere), same as HBCB/HBUK already require on
-every future sync.
+**Backfilled 2026-09-08** across all 69 already-stored periods (2021-01
+through 2026-09) at the report owner's explicit confirmation in chat
+("fix the 2443 USD in jan 2021 balance... consider it as manual
+adjustment and adjust it against the retained earnings"). For each
+period: read the stored `tb` document + shard, summed HBFR's raw
+`accounting`/`reporting` across every account row, and wrote the exact
+negative of that sum into account `3141001`'s HBFR cell as a
+`simulatedAdjustments` entry (same shape/format as HBCB/HBUK's), leaving
+every other entity's data and adjustments untouched.
+
+**Correction to the initial write-up above:** before running the
+backfill, every period's raw HBFR gap was computed fresh from the live
+stored data (not assumed) as a sanity check — and unlike the "compounds
+year over year" prediction made when this was first investigated, the
+actual raw gap turned out to be **essentially flat across all 69
+periods**, consistently -2,443.06 to -2,443.07 in reporting currency
+(accounting-side residual under $0.01 throughout) from 2021-01 all the
+way to 2026-09. The per-account, per-year deltas found earlier via direct
+Databricks queries on `1112006` alone (which *do* grow year over year)
+turned out to be offset by other accounts' similar unswept-revaluation
+activity in later years, keeping the entity-level total pinned near
+$2,443 rather than compounding. The mechanism (computing each period's
+adjustment dynamically from its own raw total, never a hardcoded figure)
+was the right call regardless, since it's self-correcting if that ever
+changes — it just happens to land on the same number every period in
+practice.
 
 One more thing this surfaced: the automatic "does not net to zero"
 warning check only looks at the **accounting**-currency total per
