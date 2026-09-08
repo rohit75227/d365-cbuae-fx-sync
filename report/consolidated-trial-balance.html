@@ -537,6 +537,7 @@
       <div class="segmented" id="company-ccy-toggle" role="group" aria-label="Currency basis">
         <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
         <button type="button" data-ccy="accounting">Accounting</button>
+        <button type="button" data-ccy="transaction">Transaction Currency</button>
       </div>
     </div>
     <button type="button" class="btn-export" id="company-export-btn" disabled>Export to Excel</button>
@@ -637,10 +638,10 @@
     </div>
     <footer class="notes" id="intercompany-notes-host" hidden>
       <span class="wordmark">Huda Beauty</span>
-      <span>One row per (Company, Offset Company) intercompany relationship: Accounts Receivable is the Company's own receivable-from-Offset-Company balance; Payable Amount is the Offset Company's own payable-to-Company balance &mdash; the two sides of the same relationship, each from that company's own books</span>
+      <span>One row per (Company, Offset Company) intercompany relationship: Net Balance is the Company's own receivable-from-Offset-Company account netted against its own payable-to-Offset-Company account (if it holds one) &mdash; both from the Company's own books; Offset Net Balance is the same netting done from the Offset Company's own books against the Company</span>
       <span>Only covers relationships between the 16 tracked operating entities &mdash; balances against Kayali (a related but separate brand/legal group) or any other related party outside those 16 are not shown here</span>
-      <span>Difference = Accounts Receivable + Payable Amount &mdash; a nonzero difference flags an intercompany imbalance to investigate (including one side booked without the other), not a data error</span>
-      <span>The Company filter narrows which company's own receivable balances are shown as the main row, not the offset side</span>
+      <span>Difference = Net Balance + Offset Net Balance &mdash; a nonzero difference flags an intercompany imbalance to investigate (including one side booked without the other), not a data error</span>
+      <span>The Company filter always shows the selected company in the Company column (regardless of which side booked which account) and lists every counterparty it has a relationship with</span>
     </footer>
   </main>
 </div>
@@ -1115,6 +1116,7 @@
     }
 
     function render(){
+      if (state.ccy === 'transaction') { renderTransaction(); return; }
       var selectedCompany = state.company, key = state.periodKey, ccy = state.ccy;
       if (!selectedCompany || !key) return;
 
@@ -1291,6 +1293,178 @@
         exportBtn.disabled = false;
       }).catch(function(err){
         setStatus('Could not load company TB (' + errorText(err) + ')', true);
+        renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
+      });
+    }
+
+    // ======================================================================
+    // "Transaction Currency" mode -- like the standard render() above, but
+    // the value shown is the RAW amount actually posted (gjae's own
+    // transactioncurrencyamount), not converted to accounting or reporting
+    // currency, so the grain gains a third dimension: one row per (account,
+    // company, transaction currency) instead of (account, company). Backed
+    // by `currencytb`/`currencymovement` (the same collections the By
+    // Currency tab uses), which already carry this figure per row.
+    //
+    // Totals are ALWAYS shown here, deliberately never suppressed even
+    // though summing rows posted in different currencies together is not a
+    // meaningful single number -- the report owner asked for this
+    // explicitly ("TB will not be zero but it's fine"), same precedent as
+    // the By Currency tab's own Grand Total.
+    // ======================================================================
+    function renderTransaction(){
+      var selectedCompany = state.company, key = state.periodKey;
+      if (!selectedCompany || !key) return;
+
+      var isAll = selectedCompany === 'ALL';
+      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + key + ' · transaction currency…');
+      var prevKey = prevPeriodKey(key);
+
+      Promise.all([
+        loadShardedDoc('currencytb', key),
+        loadShardedDoc('currencytb', prevKey),
+        loadShardedDoc('currencymovement', key),
+      ]).then(function(results){
+        var cur = results[0], prev = results[1], movementDoc = results[2];
+        if (!cur){
+          renderEmpty('No data for this period', 'The sync job has not produced a transaction-currency snapshot for <code>' + key + '</code> yet.');
+          return;
+        }
+
+        var entityMetaByCode = {};
+        (state.entities || []).forEach(function(e, i){ entityMetaByCode[e.code] = { meta: e, order: i }; });
+
+        function includeCompany(code){
+          return isAll || code === selectedCompany;
+        }
+
+        // Key rows by "account|company|txnCurrency" -- the extra dimension
+        // versus the standard render() above.
+        var closingByKey = {};
+        cur.rows.forEach(function(acc){
+          Object.keys(acc.byEntity || {}).forEach(function(company){
+            if (!includeCompany(company)) return;
+            var cell = acc.byEntity[company];
+            closingByKey[acc.mainAccountId + '|' + company + '|' + acc.txnCurrency] = {
+              name: acc.mainAccountName, value: cell.transaction,
+            };
+          });
+        });
+        var openingByKey = {};
+        if (prev){
+          prev.rows.forEach(function(acc){
+            Object.keys(acc.byEntity || {}).forEach(function(company){
+              if (!includeCompany(company)) return;
+              var cell = acc.byEntity[company];
+              openingByKey[acc.mainAccountId + '|' + company + '|' + acc.txnCurrency] = {
+                name: acc.mainAccountName, value: cell.transaction,
+              };
+            });
+          });
+        }
+        var movementByKey = {};
+        (movementDoc ? movementDoc.rows : []).forEach(function(m){
+          if (!includeCompany(m.entity)) return;
+          movementByKey[m.mainAccountId + '|' + m.entity + '|' + m.txnCurrency] = m;
+        });
+
+        // Union of every (account, company, txnCurrency) with a closing
+        // balance, an opening balance, or in-period movement -- same
+        // "don't silently drop a row that closes to zero this period"
+        // reasoning as the standard render() above.
+        var keySet = {};
+        Object.keys(closingByKey).forEach(function(k){ keySet[k] = true; });
+        Object.keys(openingByKey).forEach(function(k){ keySet[k] = true; });
+        Object.keys(movementByKey).forEach(function(k){ keySet[k] = true; });
+        var keys = Object.keys(keySet).sort(function(a, b){
+          var pa = a.split('|'), pb = b.split('|');
+          if (pa[0] !== pb[0]) return pa[0] < pb[0] ? -1 : 1;
+          var oa = entityMetaByCode[pa[1]] ? entityMetaByCode[pa[1]].order : 999;
+          var ob = entityMetaByCode[pb[1]] ? entityMetaByCode[pb[1]].order : 999;
+          if (oa !== ob) return oa - ob;
+          return pa[2] < pb[2] ? -1 : (pa[2] > pb[2] ? 1 : 0);
+        });
+        if (!keys.length){
+          renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' transaction-currency balances for ' + key + '.');
+          return;
+        }
+
+        var thead = '<tr>' +
+          '<th class="col-account">Main Account</th>' +
+          '<th class="col-name">Main Account Name</th>' +
+          '<th class="col-company">Company</th>' +
+          '<th class="col-ccy">Txn Ccy</th>' +
+          '<th>Opening Balance<span class="ccy-tag">mixed ccy</span></th>' +
+          '<th>Current Month Dr<span class="ccy-tag">mixed ccy</span></th>' +
+          '<th>Current Month Cr<span class="ccy-tag">mixed ccy</span></th>' +
+          '<th class="col-total">Closing Balance<span class="ccy-tag">mixed ccy</span></th>' +
+          '</tr>';
+
+        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Txn Ccy', 'Opening Balance', 'Current Month Dr', 'Current Month Cr', 'Closing Balance']];
+        var bodyRows = keys.map(function(k){
+          var parts = k.split('|'), id = parts[0], company = parts[1], txnCcy = parts[2];
+          var isPl = parseInt(id, 10) >= 4000000;
+          var openingEntry = openingByKey[k];
+          var closingEntry = closingByKey[k];
+          var m = movementByKey[k];
+          var name = (closingEntry && closingEntry.name) || (openingEntry && openingEntry.name) || (m && m.mainAccountName) || '';
+          var opening = (isPl && cur.doc.period === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
+          var dr = m ? m.debitTransaction : 0;
+          var cr = m ? m.creditTransaction : 0;
+          var closing = closingEntry ? closingEntry.value : 0;
+
+          totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
+          exportRows.push([id, name, company, txnCcy, opening, dr, cr, closing]);
+
+          var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
+          return '<tr>' +
+            '<td class="col-account">' + escapeHtml(id) + '</td>' +
+            '<td class="col-name">' + escapeHtml(name) + '</td>' +
+            '<td class="col-company">' + escapeHtml(company) + '</td>' +
+            '<td class="col-ccy">' + escapeHtml(txnCcy) + '</td>' +
+            '<td class="' + fo.cls + '">' + fo.text + '</td>' +
+            '<td class="' + fd.cls + '">' + fd.text + '</td>' +
+            '<td class="' + fc.cls + '">' + fc.text + '</td>' +
+            '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>' +
+            '</tr>';
+        }).join('');
+
+        var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
+        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-company"></td><td class="col-ccy"></td>' +
+          '<td class="' + fo.cls + '">' + fo.text + '</td>' +
+          '<td class="' + fd.cls + '">' + fd.text + '</td>' +
+          '<td class="' + fc.cls + '">' + fc.text + '</td>' +
+          '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
+        exportRows.push(['Grand Total', '', '', '', totals.opening, totals.dr, totals.cr, totals.closing]);
+
+        reportHost.innerHTML =
+          '<div class="table-card"><div class="table-scroll"><table>' +
+            '<thead>' + thead + '</thead>' +
+            '<tbody>' + bodyRows + '</tbody>' +
+            '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+          '</table></div></div>';
+
+        var netMovement = totals.dr - totals.cr;
+        var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
+        var subject = isAll ? 'all companies' : selectedCompany;
+        bannerHost.innerHTML =
+          '<div class="banner ' + (reconciles ? 'good' : '') + '"><strong>' + (reconciles ? 'Reconciles' : 'Note') + ':</strong>&nbsp;' +
+          (reconciles
+            ? 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + ' (checked per row, before summing across currencies).'
+            : 'Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between syncs. Re-sync to refresh.') +
+          ' The Grand Total row adds figures posted in different currencies together and will not be a meaningful single amount &mdash; shown anyway rather than hidden, since each row above it is correct in its own currency.</div>';
+
+        notesHost.hidden = false;
+        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
+
+        state.lastExport = {
+          rows: exportRows,
+          filename: 'CompanyTB_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_transaction.xlsx',
+        };
+        exportBtn.disabled = false;
+      }).catch(function(err){
+        setStatus('Could not load transaction-currency data (' + errorText(err) + ')', true);
         renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
       });
     }
@@ -1727,41 +1901,77 @@
           });
         });
 
-        // Union of every (company, counterparty) pair with EITHER side
-        // booked -- a payable booked with no matching receivable (or vice
-        // versa) is exactly the kind of gap this view exists to surface,
-        // so it must still get a row rather than being silently dropped.
-        var pairKeySet = {};
-        Object.keys(arByPair).forEach(function(k){ pairKeySet[k] = true; });
-        Object.keys(apByPair).forEach(function(k){
-          var parts = k.split('|'); // apByPair's key is "offsetCompany|company" from AP's own perspective
-          pairKeySet[parts[1] + '|' + parts[0]] = true;
-        });
+        // Each company can hold BOTH a receivable-range and a payable-range
+        // account against the same counterparty in its own books (e.g. it
+        // sold something to that counterparty and separately owes it for
+        // something else) -- netCell() combines a company's own AR and its
+        // own AP against one counterparty into that company's single net
+        // intercompany position, the way the report owner asked for this
+        // to read: "pair the receivable and payable, net both accounts."
+        function netCell(company, counterparty){
+          var arEntry = arByPair[company + '|' + counterparty];
+          var apEntry = apByPair[company + '|' + counterparty];
+          var ids = [];
+          [arEntry, apEntry].forEach(function(entry){
+            if (!entry) return;
+            entry.accountIds.forEach(function(id){ if (ids.indexOf(id) === -1) ids.push(id); });
+          });
+          return {
+            value: (arEntry ? arEntry.value : 0) + (apEntry ? apEntry.value : 0),
+            accountIds: ids,
+          };
+        }
 
-        var pairKeys = Object.keys(pairKeySet).filter(function(k){
-          var mainCompany = k.split('|')[0];
-          return isAll || mainCompany === selectedCompany;
-        }).sort(function(a, b){
-          var pa = a.split('|'), pb = b.split('|');
-          var oa = entityMetaByCode[pa[0]].order, ob = entityMetaByCode[pb[0]].order;
-          if (oa !== ob) return oa - ob;
-          return entityMetaByCode[pa[1]].order - entityMetaByCode[pb[1]].order;
-        });
+        // Union of every unordered {company, counterparty} pair with either
+        // company holding an AR or AP account against the other -- a
+        // payable booked with no matching receivable (or vice versa) is
+        // exactly the kind of gap this view exists to surface, so it must
+        // still get a row rather than being silently dropped. Each
+        // unordered pair gets exactly ONE row (never a mirrored duplicate):
+        // when showing all companies, the lower entity-order code is
+        // "Company"; when filtered to one company, that company is always
+        // "Company" regardless of entity order, so the filter reliably
+        // shows every relationship that company has.
+        var pairSet = {};
+        function addPair(a, b){
+          var oa = entityMetaByCode[a].order, ob = entityMetaByCode[b].order;
+          var lo = oa < ob ? a : b, hi = oa < ob ? b : a;
+          pairSet[lo + '|' + hi] = true;
+        }
+        Object.keys(arByPair).forEach(function(k){ var p = k.split('|'); addPair(p[0], p[1]); });
+        Object.keys(apByPair).forEach(function(k){ var p = k.split('|'); addPair(p[0], p[1]); });
 
-        var rows = pairKeys.map(function(k){
-          var parts = k.split('|'), company = parts[0], counterparty = parts[1];
-          var arEntry = arByPair[k];
-          var apEntry = apByPair[counterparty + '|' + company];
+        var directedPairs;
+        if (isAll){
+          directedPairs = Object.keys(pairSet).map(function(k){ return k.split('|'); });
+        } else {
+          var counterparties = {};
+          Object.keys(pairSet).forEach(function(k){
+            var p = k.split('|');
+            if (p[0] === selectedCompany) counterparties[p[1]] = true;
+            if (p[1] === selectedCompany) counterparties[p[0]] = true;
+          });
+          directedPairs = Object.keys(counterparties).map(function(cp){ return [selectedCompany, cp]; });
+        }
+
+        var rows = directedPairs.map(function(p){
+          var company = p[0], counterparty = p[1];
+          var companyCell = netCell(company, counterparty);
+          var offsetCell = netCell(counterparty, company);
           return {
             company: company,
             counterparty: counterparty,
-            arValue: arEntry ? arEntry.value : 0,
-            arAccountIds: arEntry ? arEntry.accountIds : [],
-            payableValue: apEntry ? apEntry.value : 0,
-            apAccountIds: apEntry ? apEntry.accountIds : [],
+            arValue: companyCell.value,
+            arAccountIds: companyCell.accountIds,
+            payableValue: offsetCell.value,
+            apAccountIds: offsetCell.accountIds,
           };
         }).filter(function(r){
           return Math.round(Math.abs(r.arValue) * 100) !== 0 || Math.round(Math.abs(r.payableValue) * 100) !== 0;
+        }).sort(function(a, b){
+          var oa = entityMetaByCode[a.company].order, ob = entityMetaByCode[b.company].order;
+          if (oa !== ob) return oa - ob;
+          return entityMetaByCode[a.counterparty].order - entityMetaByCode[b.counterparty].order;
         });
 
         if (!rows.length){
@@ -1775,10 +1985,10 @@
           return found ? found.meta.accountingCurrency : '';
         }
 
-        // Which underlying main account(s) feed a row's AR or payable side --
-        // usually exactly one, occasionally two (e.g. a company can carry
-        // both an old and current receivable account against the same
-        // counterparty), never zero for a side that has a nonzero value.
+        // Which underlying main account(s) feed a row's Net Balance or
+        // Offset Net Balance side -- usually one or two (a company's own
+        // receivable and/or payable account against that counterparty),
+        // never zero for a side whose net is nonzero.
         function acctDetail(ids){
           if (!ids.length) return { code: '—', name: '', title: '' };
           var names = ids.map(function(id){ return accountNameById[id] || ''; });
@@ -1798,16 +2008,16 @@
         var thead = '<tr>' +
           '<th class="col-company">Company</th>' +
           '<th class="col-acct">Account</th>' +
-          '<th>Accounts Receivable<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
+          '<th>Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
           '<th class="col-company">Offset Company</th>' +
           '<th class="col-acct">Offset Account</th>' +
-          '<th>Payable Amount<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
+          '<th>Offset Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
           (showTotals
             ? '<th class="col-total">Difference<span class="ccy-tag">USD</span></th>'
             : '<th class="col-total na-note">Difference<span class="ccy-tag">mixed ccy</span></th>') +
           '</tr>';
 
-        var exportHeader = ['Company', 'Account', 'Accounts Receivable (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Payable Amount (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (showTotals ? ' (USD)' : '')];
+        var exportHeader = ['Company', 'Account', 'Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Offset Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (showTotals ? ' (USD)' : '')];
         var exportRows = [exportHeader];
 
         var totals = { ar: 0, payable: 0, diff: 0 };
@@ -1857,13 +2067,13 @@
 
         if (!showTotals){
           bannerHost.innerHTML =
-            '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;Company and Offset Company can each be in a different local currency (see the ccy tag under each), so Accounts Receivable and Payable Amount are not always directly comparable and Difference is hidden &mdash; switch to Reporting Currency to see it.</div>';
+            '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;Company and Offset Company can each be in a different local currency (see the ccy tag under each), so the two Net Balance columns are not always directly comparable and Difference is hidden &mdash; switch to Reporting Currency to see it.</div>';
         } else {
           var reconciled = Math.abs(totals.diff) < 1;
           var subject = isAll ? 'all companies' : selectedCompany;
           bannerHost.innerHTML = reconciled
-            ? '<div class="banner good"><strong>Reconciled:</strong>&nbsp;Accounts Receivable + Payable Amount nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.</div>'
-            : '<div class="banner"><strong>Note:</strong>&nbsp;Accounts Receivable + Payable Amount does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ') &mdash; an intercompany imbalance to investigate, not a data error.</div>';
+            ? '<div class="banner good"><strong>Reconciled:</strong>&nbsp;Net Balance + Offset Net Balance nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.</div>'
+            : '<div class="banner"><strong>Note:</strong>&nbsp;Net Balance + Offset Net Balance does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ') &mdash; an intercompany imbalance to investigate, not a data error.</div>';
         }
 
         notesHost.hidden = false;

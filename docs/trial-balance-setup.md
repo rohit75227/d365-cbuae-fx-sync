@@ -40,15 +40,26 @@ it's been replaced.
 - **Consolidated** — the original view: Main Account × company columns,
   Grand Total, reporting/accounting currency toggle, one period at a time.
   Backed by the `tb` collection.
-- **Company TB** — pick one company and one period; shows Opening Balance
-  (the prior period's Closing Balance — carried forward for Balance Sheet
-  accounts, zero at the start of a fiscal year for P&L accounts), Current
-  Month Dr, Current Month Cr, and Closing Balance, per main account.
-  Opening/Closing come from `tb`; Dr/Cr come from the new `movement`
-  collection (`sql/monthly_movement.sql`), which is *raw* monthly movement
-  with **no simulated adjustments applied** (those only ever touch the
-  Consolidated view's Closing Balance) — the tab's banner flags whether
-  Opening + Dr − Cr reconciles to Closing for that reason.
+- **Company TB** — pick one company (or "All Companies") and one period;
+  shows Opening Balance (the prior period's Closing Balance — carried
+  forward for Balance Sheet accounts, zero at the start of a fiscal year for
+  P&L accounts), Current Month Dr, Current Month Cr, and Closing Balance,
+  per main account. Opening/Closing come from `tb`; Dr/Cr come from the
+  `movement` collection (`sql/monthly_movement.sql`), which is *raw* monthly
+  movement with **no simulated adjustments applied** (those only ever touch
+  the Consolidated view's Closing Balance) — the tab's banner flags whether
+  Opening + Dr − Cr reconciles to Closing for that reason. A third currency
+  option, **Transaction Currency** (added 2026-09-08), shows the RAW amount
+  actually posted (`gjae.transactioncurrencyamount`, not converted to
+  accounting or reporting currency) with one row per (account, company,
+  transaction currency) — reuses `currencytb`/`currencymovement` (the same
+  collections the By Currency tab already used), which now also carry a
+  `transaction` field per cell alongside `accounting`/`reporting`. Totals
+  are always shown in this mode even though summing different currencies
+  together isn't a meaningful single number (explicit report-owner request:
+  "TB will not be zero but it's fine") — each row's own Opening + Dr − Cr =
+  Closing identity is still checked and still holds, it's only the
+  cross-currency Grand Total that's non-meaningful.
 - **By Currency** — same shape as Company TB (pick one company + one
   period): Opening Balance / Current Month Dr / Current Month Cr / Closing
   Balance, but with one row per (main account, original transaction
@@ -56,14 +67,18 @@ it's been replaced.
   `currencytb` (closing balances) and `currencymovement` (Dr/Cr), both from
   `sql/monthly_movement_by_currency.sql`. Also does not include simulated
   adjustments.
-- **Intercompany Reconciliation** (added 2026-09-07) — one period at a time,
-  Main Account × company columns like Consolidated, but split into two
-  sections (intercompany receivable accounts `1122001`-`1122999`, payable
-  accounts `2112001`-`2112999`), each with its own subtotal row, plus a
-  Difference row (Total Receivables + Total Payables — payables are
-  credit-normal/negative in this sign convention, so a fully reconciled book
-  nets to zero; in practice it currently does not, which is the whole point
-  of the tab). Kayali-counterparty accounts (a related but separate
+- **Intercompany Reconciliation** (added 2026-09-07, redesigned 2026-09-08
+  twice — see the dated notes below) — one row per (Company, Offset
+  Company) relationship, with a Company/Offset-Company filter (defaults to
+  all companies) and an Account/Offset Account column showing which
+  underlying main account(s) feed each side. As of the 2026-09-08 netting
+  change: **Net Balance** is the Company's own receivable-from-Offset-Company
+  account netted against its own payable-to-Offset-Company account (both
+  from the Company's own books, if it holds both); **Offset Net Balance** is
+  the same netting from the Offset Company's own books. Difference = Net
+  Balance + Offset Net Balance — a nonzero difference flags a genuine
+  intercompany imbalance (including one side booked without the other), not
+  a data error. Kayali-counterparty accounts (a related but separate
   brand/legal group) and any account with a zero balance for the selected
   period are excluded server-side, before the data ever reaches the
   `intercompany` collection. Backed by `sql/intercompany_movement.sql` +
@@ -73,6 +88,29 @@ it's been replaced.
   cumulative query, since the account universe is narrow enough (~80
   accounts, ~5,600 movement rows across all history as of 2026-09-07) to fit
   in a single un-paginated query.
+
+**2026-09-08: Intercompany Reconciliation netted each side's own AR and AP
+against the same counterparty, and deduped mirrored rows.** Report-owner
+feedback: a company can hold BOTH a receivable-range and a payable-range
+account against the very same counterparty (e.g. HBDM sold something to
+HBFZ, creating HBDM's own AR-HBFZ, and separately owes HBFZ for something
+else, creating HBDM's own AP-HBFZ) — the tab needs to net those together
+per company, not show only the receivable side. Changed `arValue`/
+`payableValue` (rendered as **Net Balance** / **Offset Net Balance**) to
+each be that company's own AR-against-counterparty PLUS that same
+company's own AP-against-counterparty (both from that one company's
+books), for both the Company side and the Offset Company side. A side
+effect worth knowing: before this change, a company pair where BOTH
+companies each held their own AR account against the other produced TWO
+directional rows (A→B and B→A) that showed genuinely different figures
+(each row's "Accounts Receivable" was a different account). After netting,
+those two rows become exact mirrors of each other (row A→B's Net Balance
+equals row B→A's Offset Net Balance, and vice versa), so the redesign also
+dedupes to ONE row per unordered company pair — when "All Companies" is
+selected, the lower-entity-order code becomes "Company"; when filtered to
+one company, that company is always shown as "Company" regardless of
+entity order, so the filter still reliably lists everything that company
+has a relationship with.
 
 **2026-09-04, later same day: fixed Company TB / By Currency hanging on
 "Connecting...".** Both tabs' one-shot reads used `.get()` with no error
@@ -88,6 +126,27 @@ follow-up feedback. `scripts/build_currency_movement.py` /
 collection from the already-fetched `monthly_movement_by_currency.sql`
 pages (no new Databricks query needed) and were validated to reconcile
 exactly with `currencytb`'s closing balances before pushing.
+
+**2026-09-08: added a Transaction Currency view to Company TB.** Report-owner
+request: "in the company tb tab can you add another button for transaction
+currency, in this case the value should come from Transaction currency
+amount column and currency should also come. In this case TB will not be
+zero but its fine." Added `transactioncurrencyamount` to
+`sql/monthly_movement_by_currency.sql` (summed into `debit_txn`/`credit_txn`),
+carried through `build_currency_series.py` (new `transaction` field per
+`currencytb` cell) and `build_currency_movement.py` (new
+`debitTransaction`/`creditTransaction` fields per `currencymovement`
+record), then backfilled across all 93 existing periods (2019-01 through
+2026-09) so the new button works for every period the report already
+covers, not just new ones going forward. The view reuses the existing
+`currencytb`/`currencymovement` collections rather than creating new ones —
+no new Databricks query was needed, just two more columns on the query
+that already feeds By Currency. Per the explicit instruction above, the
+Grand Total row is always shown even when it sums figures posted in
+different currencies (unlike the accounting-currency/All-Companies view
+elsewhere in the report, which suppresses a meaningless total) — each row
+above it still reconciles correctly (Opening + Dr − Cr = Closing) since a
+single row never mixes currencies, only the Grand Total does.
 
 ## What's here
 
@@ -105,7 +164,12 @@ exactly with `currencytb`'s closing balances before pushing.
   Company TB tab's Dr/Cr columns and the `movement` collection.
 - `sql/monthly_movement_by_currency.sql` — same as above with
   `transactioncurrencycode` added to the grain — feeds the By Currency tab
-  and the `currencytb` collection.
+  and the `currencytb` collection. Also selects
+  `transactioncurrencyamount` and sums it into `debit_txn`/`credit_txn`
+  (added 2026-09-08) so `currencytb`/`currencymovement` can carry a native
+  (unconverted) `transaction` value alongside the existing
+  `accounting`/`reporting` ones, for Company TB's Transaction Currency
+  view.
 - `scripts/entities.json` — the 16 operating legal entities in scope, with
   their ledger RECID, accounting currency, and reporting currency.
 - `scripts/render_query.py` — substitutes the period-end/fiscal-year-start
@@ -127,7 +191,14 @@ exactly with `currencytb`'s closing balances before pushing.
   `--validate-against-dir` spot-check (Opening + Dr − Cr == stored Closing).
 - `scripts/build_currency_series.py` — same reconstruction as
   `build_series_from_movement.py`, keyed by (entity, account, currency)
-  instead of (entity, account), for the `currencytb` collection.
+  instead of (entity, account), for the `currencytb` collection. Since
+  2026-09-08 each `byEntity` cell also carries a `transaction` value (the
+  cumulative native-currency amount, tracked with its own running total
+  alongside `accounting`/`reporting` so a P&L year-reset resets all three
+  together) sourced from `monthly_movement_by_currency.sql`'s
+  `debit_txn`/`credit_txn`. `scripts/build_currency_movement.py` likewise
+  adds `debitTransaction`/`creditTransaction` to each `currencymovement`
+  record.
 - `scripts/prepare_movement_writes.py` / `scripts/prepare_currency_writes.py`
   — shard `movement`/`currencytb` period JSON into write_db-ready batches,
   mirroring `prepare_backfill_writes.py` for `tb`.
@@ -188,7 +259,12 @@ otherwise. The correct daily procedure updates **all four collections**:
      single month is small (a few hundred rows), one page suffices.
    - `scripts/build_monthly_movement.py` / `scripts/build_currency_movement.py`
      on that page → `scripts/prepare_movement_writes.py` /
-     `scripts/prepare_currency_movement_writes.py` → write_db.
+     `scripts/prepare_currency_movement_writes.py` → write_db. Since
+     2026-09-08 `sql/monthly_movement_by_currency.sql` also selects
+     `transactioncurrencyamount`, so `currencytb`/`currencymovement` pick up
+     the `transaction`/`debitTransaction`/`creditTransaction` fields
+     automatically on every future sync — no separate step needed for
+     Company TB's Transaction Currency view.
    - For `currencytb`, do **not** derive it incrementally from the prior
      period's stored value (see the backdating finding just below for why)
      — instead run a direct cumulative-by-currency query for the current

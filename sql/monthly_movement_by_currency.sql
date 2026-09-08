@@ -18,6 +18,17 @@
 -- same reason as monthly_movement.sql: it must reconcile with the
 -- already-published, sign-based trial balance.
 --
+-- 2026-09-08 addition: debit_txn/credit_txn, the SAME debit/credit split but
+-- on gjae.transactioncurrencyamount (the raw amount actually posted, in
+-- whatever currency that row's txn_ccy names) instead of the
+-- accounting/reporting converted amounts -- feeds Company TB's "Transaction
+-- Currency" button. Summing this within one (account, txn_ccy) bucket is
+-- sound (same unit throughout that bucket's own history); it is NOT sound to
+-- sum debit_txn/credit_txn ACROSS different txn_ccy rows, since that mixes
+-- currencies -- the report deliberately shows that sum anyway when asked
+-- (never silently dropped), it just won't reconcile to a meaningful number,
+-- same as any other cross-currency total in this report.
+--
 -- Grain: one row per (entity_code, mainaccountid, txn_ccy, ym). ~93,802 rows
 -- across 2019-01 through 2026-09 (partial) as of 2026-09-04 -- paginate with
 -- the ROW_NUMBER() pattern (12,288-row cap).
@@ -52,7 +63,8 @@ WITH filtered AS (
         date_format(gje.accountingdate, 'yyyy-MM') AS ym,
         COALESCE(gjae.transactioncurrencycode, '???') AS txn_ccy,
         gjae.accountingcurrencyamount AS accountingcurrencyamount,
-        gjae.reportingcurrencyamount  AS reportingcurrencyamount
+        gjae.reportingcurrencyamount  AS reportingcurrencyamount,
+        gjae.transactioncurrencyamount AS transactioncurrencyamount
     FROM hb_catalog.db_bronze_d365.generaljournalaccountentry gjae
     JOIN hb_catalog.db_bronze_d365.generaljournalentry gje
         ON gje.recid = gjae.generaljournalentry
@@ -77,7 +89,9 @@ grouped AS (
         SUM(CASE WHEN accountingcurrencyamount > 0 THEN accountingcurrencyamount ELSE 0 END) AS debit_acc,
         SUM(CASE WHEN accountingcurrencyamount < 0 THEN -accountingcurrencyamount ELSE 0 END) AS credit_acc,
         SUM(CASE WHEN reportingcurrencyamount > 0 THEN reportingcurrencyamount ELSE 0 END) AS debit_rep,
-        SUM(CASE WHEN reportingcurrencyamount < 0 THEN -reportingcurrencyamount ELSE 0 END) AS credit_rep
+        SUM(CASE WHEN reportingcurrencyamount < 0 THEN -reportingcurrencyamount ELSE 0 END) AS credit_rep,
+        SUM(CASE WHEN transactioncurrencyamount > 0 THEN transactioncurrencyamount ELSE 0 END) AS debit_txn,
+        SUM(CASE WHEN transactioncurrencyamount < 0 THEN -transactioncurrencyamount ELSE 0 END) AS credit_txn
     FROM filtered
     WHERE entity_code IS NOT NULL
     GROUP BY entity_code, mainaccountid, ym, txn_ccy

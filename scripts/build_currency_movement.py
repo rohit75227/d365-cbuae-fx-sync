@@ -83,6 +83,8 @@ def main():
             "creditAccounting": float(r[idx["credit_acc"]] or 0),
             "debitReporting": float(r[idx["debit_rep"]] or 0),
             "creditReporting": float(r[idx["credit_rep"]] or 0),
+            "debitTransaction": float(r[idx["debit_txn"]] or 0),
+            "creditTransaction": float(r[idx["credit_txn"]] or 0),
         }
         by_period.setdefault(ym, []).append(rec)
 

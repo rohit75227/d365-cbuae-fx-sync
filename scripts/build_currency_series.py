@@ -81,6 +81,7 @@ def build_series(deltas, months, reset_yearly):
     for key, ym_deltas in deltas.items():
         cum_acc = 0.0
         cum_rep = 0.0
+        cum_txn = 0.0
         per_month = {}
         last_year = None
         for ym in months:
@@ -88,11 +89,13 @@ def build_series(deltas, months, reset_yearly):
             if reset_yearly and year != last_year:
                 cum_acc = 0.0
                 cum_rep = 0.0
+                cum_txn = 0.0
                 last_year = year
-            d_acc, d_rep = ym_deltas.get(ym, (0.0, 0.0))
+            d_acc, d_rep, d_txn = ym_deltas.get(ym, (0.0, 0.0, 0.0))
             cum_acc += d_acc
             cum_rep += d_rep
-            per_month[ym] = (cum_acc, cum_rep)
+            cum_txn += d_txn
+            per_month[ym] = (cum_acc, cum_rep, cum_txn)
         series[key] = per_month
     return series
 
@@ -131,10 +134,13 @@ def main():
         credit_acc = float(r[idx["credit_acc"]] or 0)
         debit_rep = float(r[idx["debit_rep"]] or 0)
         credit_rep = float(r[idx["credit_rep"]] or 0)
+        debit_txn = float(r[idx["debit_txn"]] or 0)
+        credit_txn = float(r[idx["credit_txn"]] or 0)
         acc_delta = debit_acc - credit_acc
         rep_delta = debit_rep - credit_rep
+        txn_delta = debit_txn - credit_txn
         bucket = bs_deltas if int(account) < 4000000 else pl_deltas
-        bucket.setdefault((entity, account, ccy), {})[ym] = (acc_delta, rep_delta)
+        bucket.setdefault((entity, account, ccy), {})[ym] = (acc_delta, rep_delta, txn_delta)
 
     bs_series = build_series(bs_deltas, months, reset_yearly=False)
     pl_series = build_series(pl_deltas, months, reset_yearly=True)
@@ -150,8 +156,8 @@ def main():
         for (entity, account, ccy), per_month in series.items():
             if entity not in entity_by_code:
                 continue
-            acc, rep = per_month[ym]
-            if abs(acc) < 0.005 and abs(rep) < 0.005:
+            acc, rep, txn = per_month[ym]
+            if abs(acc) < 0.005 and abs(rep) < 0.005 and abs(txn) < 0.005:
                 continue
             reporting_amt = rep
             if entity_by_code[entity].get("reportingCurrencyFallback"):
@@ -161,7 +167,7 @@ def main():
                 "mainAccountId": account, "mainAccountName": names[account],
                 "txnCurrency": ccy, "byEntity": {},
             })
-            rows_by_key[key]["byEntity"][entity] = {"accounting": acc, "reporting": reporting_amt}
+            rows_by_key[key]["byEntity"][entity] = {"accounting": acc, "reporting": reporting_amt, "transaction": txn}
 
         out_rows = sorted(rows_by_key.values(), key=lambda r: (r["mainAccountId"], r["txnCurrency"]))
         out = {"fiscalYear": fy, "period": period, "rows": out_rows}
