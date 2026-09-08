@@ -341,7 +341,7 @@
     white-space:nowrap;
     border-bottom:1px solid var(--border);
   }
-  thead th.col-account, thead th.col-name, thead th.col-ccy, thead th.col-company{ text-align:left; }
+  thead th.col-account, thead th.col-name, thead th.col-ccy, thead th.col-company, thead th.col-acct{ text-align:left; }
   .ccy-tag{
     display:block;
     font-weight:400;
@@ -355,6 +355,7 @@
   thead th.col-name.with-ccy{ left:96px; }
   thead th.col-ccy{ min-width:64px; }
   thead th.col-company{ min-width:80px; }
+  thead th.col-acct{ min-width:170px; }
 
   tbody td{
     padding:9px 14px;
@@ -373,6 +374,8 @@
   tbody td.col-name{ left:96px; min-width:220px; color:var(--text-dim); }
   tbody td.col-ccy{ font-weight:700; color:var(--accent); min-width:64px; }
   tbody td.col-company{ font-weight:700; color:var(--accent); min-width:80px; }
+  tbody td.col-acct{ text-align:left; white-space:normal; font-weight:600; min-width:170px; }
+  .acct-name{ display:block; font-weight:400; color:var(--text-dim); font-size:11px; margin-top:2px; }
   tbody tr:nth-child(even) td{ background-color:var(--surface-2); }
   tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name, tbody tr:nth-child(even) td.col-ccy, tbody tr:nth-child(even) td.col-company{ background-color:var(--surface-2); }
   tbody tr:hover td{ background-color:var(--total-row-bg); }
@@ -1700,10 +1703,14 @@
         // byPair["company|counterparty"] = { value, accountIds: [] }, kept
         // separately for receivable and payable so each side always comes
         // from that company's OWN books (never blended across the two
-        // account ranges).
+        // account ranges). accountNameById is collected alongside so the
+        // table can show which underlying main account(s) feed each row,
+        // not just the company codes.
         var arByPair = {};
         var apByPair = {};
+        var accountNameById = {};
         cur.rows.forEach(function(acc){
+          accountNameById[acc.mainAccountId] = acc.mainAccountName || '';
           var counterparty = COUNTERPARTY_BY_ACCOUNT[acc.mainAccountId];
           if (!counterparty || !entityMetaByCode[counterparty]) return; // untracked related party or generic bucket
           var target = acc.kind === 'receivable' ? arByPair : (acc.kind === 'payable' ? apByPair : null);
@@ -1716,7 +1723,7 @@
             var pairKey = company + '|' + counterparty;
             var entry = target[pairKey] || (target[pairKey] = { value: 0, accountIds: [] });
             entry.value += raw;
-            entry.accountIds.push(acc.mainAccountId);
+            if (entry.accountIds.indexOf(acc.mainAccountId) === -1) entry.accountIds.push(acc.mainAccountId);
           });
         });
 
@@ -1768,17 +1775,39 @@
           return found ? found.meta.accountingCurrency : '';
         }
 
+        // Which underlying main account(s) feed a row's AR or payable side --
+        // usually exactly one, occasionally two (e.g. a company can carry
+        // both an old and current receivable account against the same
+        // counterparty), never zero for a side that has a nonzero value.
+        function acctDetail(ids){
+          if (!ids.length) return { code: '—', name: '', title: '' };
+          var names = ids.map(function(id){ return accountNameById[id] || ''; });
+          return {
+            code: ids.join(', '),
+            name: names.filter(Boolean).join('; '),
+            title: ids.map(function(id, i){ return id + (names[i] ? ' – ' + names[i] : ''); }).join('; '),
+          };
+        }
+
+        function acctCellHtml(detail){
+          var nameHtml = detail.name ? '<span class="acct-name">' + escapeHtml(detail.name) + '</span>' : '';
+          var titleAttr = detail.title ? ' title="' + escapeAttr(detail.title) + '"' : '';
+          return '<td class="col-acct"' + titleAttr + '>' + escapeHtml(detail.code) + nameHtml + '</td>';
+        }
+
         var thead = '<tr>' +
           '<th class="col-company">Company</th>' +
+          '<th class="col-acct">Account</th>' +
           '<th>Accounts Receivable<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
           '<th class="col-company">Offset Company</th>' +
+          '<th class="col-acct">Offset Account</th>' +
           '<th>Payable Amount<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
           (showTotals
             ? '<th class="col-total">Difference<span class="ccy-tag">USD</span></th>'
             : '<th class="col-total na-note">Difference<span class="ccy-tag">mixed ccy</span></th>') +
           '</tr>';
 
-        var exportHeader = ['Company', 'Accounts Receivable (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Payable Amount (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (showTotals ? ' (USD)' : '')];
+        var exportHeader = ['Company', 'Account', 'Accounts Receivable (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Payable Amount (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (showTotals ? ' (USD)' : '')];
         var exportRows = [exportHeader];
 
         var totals = { ar: 0, payable: 0, diff: 0 };
@@ -1787,16 +1816,18 @@
           totals.ar += r.arValue; totals.payable += r.payableValue; totals.diff += difference;
 
           var fAr = fmtAmount(r.arValue), fPay = fmtAmount(r.payableValue);
-          var arTitle = r.arAccountIds.length ? ' title="Account(s): ' + escapeAttr(r.arAccountIds.join(', ')) + '"' : '';
-          var payTitle = r.apAccountIds.length ? ' title="Account(s): ' + escapeAttr(r.apAccountIds.join(', ')) + '"' : '';
+          var arAcct = acctDetail(r.arAccountIds);
+          var apAcct = acctDetail(r.apAccountIds);
 
-          exportRows.push([r.company, r.arValue, r.counterparty, r.payableValue, showTotals ? difference : null]);
+          exportRows.push([r.company, arAcct.title || arAcct.code, r.arValue, r.counterparty, apAcct.title || apAcct.code, r.payableValue, showTotals ? difference : null]);
 
           var row = '<tr>' +
             '<td class="col-company">' + escapeHtml(r.company) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.company)) + '</span></td>' +
-            '<td class="' + fAr.cls + '"' + arTitle + '>' + fAr.text + '</td>' +
+            acctCellHtml(arAcct) +
+            '<td class="' + fAr.cls + '">' + fAr.text + '</td>' +
             '<td class="col-company">' + escapeHtml(r.counterparty) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.counterparty)) + '</span></td>' +
-            '<td class="' + fPay.cls + '"' + payTitle + '>' + fPay.text + '</td>';
+            acctCellHtml(apAcct) +
+            '<td class="' + fPay.cls + '">' + fPay.text + '</td>';
           if (showTotals){
             var fd = fmtAmount(difference);
             row += '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>';
@@ -1807,14 +1838,14 @@
           return row;
         }).join('');
 
-        var footRow = '<td class="col-company">Grand Total</td>';
+        var footRow = '<td class="col-company">Grand Total</td><td class="col-acct"></td>';
         if (showTotals){
           var fAt = fmtAmount(totals.ar), fPt = fmtAmount(totals.payable), fDt = fmtAmount(totals.diff);
-          footRow += '<td class="' + fAt.cls + '">' + fAt.text + '</td><td class="col-company"></td><td class="' + fPt.cls + '">' + fPt.text + '</td><td class="col-total ' + fDt.cls + '">' + fDt.text + '</td>';
-          exportRows.push(['Grand Total', totals.ar, '', totals.payable, totals.diff]);
+          footRow += '<td class="' + fAt.cls + '">' + fAt.text + '</td><td class="col-company"></td><td class="col-acct"></td><td class="' + fPt.cls + '">' + fPt.text + '</td><td class="col-total ' + fDt.cls + '">' + fDt.text + '</td>';
+          exportRows.push(['Grand Total', '', totals.ar, '', '', totals.payable, totals.diff]);
         } else {
-          footRow += '<td class="na-note">n/a</td><td class="col-company"></td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
-          exportRows.push(['Grand Total', null, '', null, null]);
+          footRow += '<td class="na-note">n/a</td><td class="col-company"></td><td class="col-acct"></td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
+          exportRows.push(['Grand Total', '', null, '', '', null, null]);
         }
 
         reportHost.innerHTML =
