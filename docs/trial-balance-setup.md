@@ -403,41 +403,107 @@ FY2026 periods until the real entries land in Databricks (the daily
 Routine's prompt checks this automatically), at which point remove the
 one(s) that resolved on their own — the real data will already balance.
 
-**HBFR was deliberately NOT given a simulated adjustment.** Its
-accounting-currency total already ties to exactly 0.00 — only the
-reporting-currency (USD) total is off by +2,443.07. Investigated
-2026-09-03: the largest accounting-vs-reporting gaps (e.g. `4110002`
-Product Sales, `1131019` Inventory Issue/Receipt) are all ordinary
-EUR→USD conversion differences, not one anomalous entry — this looks like
-routine historical-rate FX translation residual (EUR debits/credits net
-to zero, but each transaction converts to USD at its own transaction-date
-rate, so the USD totals don't necessarily net to zero even when EUR does).
-That's a real, structural artifact of the translation method, not a
-missing transaction to simulate a fix for — plugging it would mean
-inventing a number with no specific event behind it, unlike HBCB/HBUK
-where a concrete pending/incorrect entry was identified. Leave it as a
-flagged, immaterial ($2,443) warning unless finance identifies an actual
-missing FX Translation Reserve entry to simulate instead.
+**HBFR: revisited and given a simulated adjustment on 2026-09-08.** The
+2026-09-03 investigation (see the two paragraphs below, kept for history)
+concluded this was a diffuse "historical-rate FX translation residual"
+with no specific event to point at, and deliberately left it unsimulated.
+A report viewer's artifact comment (anchored on the Consolidated tab's
+Jan 2021 Grand Total, HBFR column) asked why the gap traces to "the HSBC
+account," which prompted a closer look and found an actual concrete
+cause, the same kind HBCB/HBUK already have:
+- HBFR's accounting-currency (EUR) total ties to exactly 0.00 in every
+  period, always. The entire reporting-currency (USD) gap comes from
+  FY2020 P&L activity: `SUM(reportingcurrencyamount)` across every P&L
+  account (`mainaccountid >= 4000000`) for HBFR's ledger, dated in
+  calendar 2020, is exactly **-2,443.069** while the matching
+  accounting-currency sum is exactly **0.00** — a perfect match to the
+  gap the report has always shown for FY2021+ periods, confirming the
+  entire gap is this one fiscal year's unclosed P&L, not a running
+  translation residual.
+- The largest single piece (+2,437.76 of the +2,443.07) is three lines on
+  account `1112006` "HSBC - EUR account" — $0.00 EUR / nonzero USD each,
+  dated 31-Dec-2020, voucher `HBFR-000001`, `createddatetime` 2022-01-26
+  12:38 (a currency-revaluation entry for the bank account). The rest is
+  smaller same-pattern entries on other
+  accounts (vouchers `HBFR-ERAV-0000001..8`, `HBFR-EXV-0000001` /
+  `HBFR-PAY-0000006`, plus `clgfr20v5`'s own residual).
+- **Why it was never closed to Retained Earnings:** FY2020's closing
+  voucher `clgfr20v5` was created 2022-01-25 10:46 — but `HBFR-000001`
+  (the HSBC-EUR revaluation, and several of the smaller ones) was created
+  **2022-01-26, a day after the close already ran.** The close couldn't
+  sweep an entry that didn't exist yet. Confirmed by direct query: no
+  `clg*`-tagged voucher for HBFR ledger touches this activity at all.
 
-**Traced to a specific fiscal year (2026-09-04, per report owner's ask
-to check why it shows in Jan 2020).** Every other closed fiscal year for
-HBFR (2019, 2021-2025) nets to **exactly** 0.00 in both accounting (EUR)
-and reporting (USD) currency. **Only FY2020** has a residual: EUR P&L
-nets to exactly 0.00, but USD P&L nets to -2,443.07 — the entire gap
-lives in this one year. January 2020 itself has zero activity (nothing
-originates there specifically); the residual comes from real
-month-by-month FY2020 trading activity (Jun-Dec 2020) each converted at
-its own transaction-date rate, plus a same-year closing/revaluation
-batch (`clgfr20v5`, dated 2020-12-31 but not actually posted until
-2022-01-25 — over a year late) that includes lines with an EUR amount
-of exactly 0.00 but a nonzero USD amount (e.g. account `6810001`
-"Unrealised FX gains or loss" and an `HBFR-FOR-0000010` foreign-currency
-revaluation batch, also created 2022-01-25/24) — normal, EUR functional
-currency doesn't need a matching entry for a USD-only translation
-adjustment. Confirms the "historical-rate FX translation residual"
-diagnosis with a specific source rather than a general theory, but
-doesn't change the conclusion: real, structural, immaterial, not a
-missing transaction to simulate.
+This is functionally the same story as HBUK's (a real entry that missed
+its year-end close), not HBCB's kind of "close hasn't run yet" gap, so it
+gets the same treatment: HBFR's Retained Earnings — Accumulated
+(`3141001`) is now in `ENTITIES_TO_AUTO_SIMULATE`
+(`scripts/prepare_backfill_writes.py`), so every period generated from
+here on (and any future full backfill run via that script) picks it up
+automatically, sized dynamically from that period's own raw HBFR total,
+same as HBCB/HBUK.
+
+**The already-stored `tb` documents for 2021-01 through 2026-09 (69
+periods) were generated before this fix existed and do not yet carry the
+adjustment** — confirmed via `tb/2021-01`, which still shows the raw
++2,443.07 USD-only gap with no HBFR entry in `simulatedAdjustments`.
+Backfilling those 69 stored periods requires ~270 individual database
+reads/writes (unlike the code change above, this touches live report
+data other viewers see), so that backfill was flagged for explicit
+confirmation before running rather than applied automatically — see the
+report-owner exchange in this artifact's comment thread on the
+Consolidated tab's Jan 2021 HBFR cell. Once confirmed, update this note
+with the date it was run. Because each subsequent fiscal year has its own
+such revaluation activity that can similarly miss its own close, the gap
+**compounds year over year** rather than staying fixed at ~$2,443 — this
+means the backfill, once run, needs one adjustment per period (not one
+fixed figure copied everywhere), same as HBCB/HBUK already require on
+every future sync.
+
+One more thing this surfaced: the automatic "does not net to zero"
+warning check only looks at the **accounting**-currency total per
+entity (see the `HBFZ` example in `tb/2021-01`'s warnings) — a
+reporting-currency-only gap like this one never trips it on its own.
+The banner's control-total check should arguably check both currencies;
+noted here rather than changed, since every entity with a known
+reporting-currency gap is now covered by an explicit simulated
+adjustment either way.
+
+The two paragraphs below are the original 2026-09-03/09-04 investigation,
+kept as-is for history; the "leave it as a flagged, immaterial ($2,443)
+warning" conclusion in the first one is superseded by the above.
+
+**Historical note (2026-09-03).** Investigated: the largest
+accounting-vs-reporting gaps (e.g. `4110002` Product Sales, `1131019`
+Inventory Issue/Receipt) are all ordinary EUR→USD conversion differences,
+not one anomalous entry — this looked like routine historical-rate FX
+translation residual (EUR debits/credits net to zero, but each
+transaction converts to USD at its own transaction-date rate, so the USD
+totals don't necessarily net to zero even when EUR does). Read at the
+time as a structural artifact of the translation method, not a missing
+transaction to simulate a fix for — plugging it would mean inventing a
+number with no specific event behind it, unlike HBCB/HBUK where a
+concrete pending/incorrect entry was identified.
+
+**Historical note (2026-09-04, per report owner's ask to check why it
+shows in Jan 2020).** Every other closed fiscal year for HBFR (2019,
+2021-2025) nets to **exactly** 0.00 in both accounting (EUR) and
+reporting (USD) currency. **Only FY2020** has a residual: EUR P&L nets to
+exactly 0.00, but USD P&L nets to -2,443.07 — the entire gap lives in
+this one year. January 2020 itself has zero activity (nothing originates
+there specifically); the residual comes from real month-by-month FY2020
+trading activity (Jun-Dec 2020) each converted at its own
+transaction-date rate, plus a same-year closing/revaluation batch
+(`clgfr20v5`, dated 2020-12-31 but not actually posted until 2022-01-25 —
+over a year late) that includes lines with an EUR amount of exactly 0.00
+but a nonzero USD amount (e.g. account `6810001` "Unrealised FX gains or
+loss" and an `HBFR-FOR-0000010` foreign-currency revaluation batch, also
+created 2022-01-25/24) — normal, EUR functional currency doesn't need a
+matching entry for a USD-only translation adjustment. This correctly
+narrowed the gap down to FY2020 specifically; the 2026-09-08 follow-up
+above went one step further and identified the exact vouchers and the
+sequencing bug (posted a day after the close) that explains why FY2020
+was never actually closed out in reporting currency.
 
 ## Known open control-total exceptions
 

@@ -24,6 +24,10 @@ ENTITIES_TO_AUTO_SIMULATE = {
         "account": "3141001", "account_name": "Retained Earnings - Accumulated",
         "reason": "Simulated correction (not yet posted in D365) -- HBUK's FY2025 close under-reversed something; FY2025 P12 itself already nets to 0.00, this gap is specific to later periods and not fully isolated as of 2026-09-04 (see docs/trial-balance-setup.md). Sized dynamically per period, not a fixed figure.",
     },
+    "HBFR": {
+        "account": "3141001", "account_name": "Retained Earnings - Accumulated",
+        "reason": "Simulated year-end close correction (not yet posted in D365) -- transfers HBFR's unclosed FY2020 (and any subsequent year's) currency-revaluation activity into Retained Earnings. Investigated 2026-09-08: HBFR's accounting-currency (EUR) total always ties to exactly 0.00, but several 31-Dec-2020 revaluation vouchers (HBFR-000001, HBFR-ERAV-*, HBFR-EXV-0000001/HBFR-PAY-0000006) posted $0 accounting-currency / nonzero reporting-currency (USD) entries -- some as late as 26-Jan-2022, a day after FY2020's closing voucher clgfr20v5 already ran on 25-Jan-2022 -- so they were never swept into Retained Earnings. The same pattern recurs with each subsequent fiscal year's own revaluation activity, so the gap compounds and this adjustment is sized dynamically from this period's own raw total, never a fixed historical figure.",
+    },
 }
 
 MAX_DOC_BYTES = 200 * 1024
