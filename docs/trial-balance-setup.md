@@ -151,23 +151,43 @@ single row never mixes currencies, only the Grand Total does.
 **2026-09-09: added a Main Account filter to all four tabs.** Report-owner
 request: "add mainaccount filter as well in all the tabs... if select a
 main account then table should get filter for that account." Each tab now
-has a "Main Account" `<select>`, rebuilt on every render from whatever
-accounts are actually present in that render's own data (never a fixed
-roster) via a shared `populateAccountSelect()` helper, so a previously
-selected account that isn't present after a period/company/currency switch
-falls back to "All Accounts" instead of silently filtering to nothing.
-Consolidated and By Currency filter their row list directly by
-`mainAccountId`; Company TB filters by the account segment of its
-`account|company` (or `account|company|txnCurrency` in Transaction
-Currency mode) row keys, and the filter persists correctly across a
-currency-mode switch since both `render()` and `renderTransaction()` share
-the same `state.account` and `<select>` element. Intercompany has no
-single `mainAccountId` per row (each row nets one or two accounts per
-side), so it filters on whether the selected account is among that row's
-own `arAccountIds`/`apAccountIds` (either side, either company) rather than
-an exact match. Grand Totals recompute from the filtered row set, same as
-any other filter in this report (e.g. Company TB's per-company view) — a
-filtered total is that account's total, not an error.
+has a "Main Account" filter, rebuilt on every render from whatever accounts
+are actually present in that render's own data (never a fixed roster), so
+a previously selected account that isn't present after a
+period/company/currency switch falls back to "All Accounts" instead of
+silently filtering to nothing. Consolidated and By Currency filter their
+row list directly by `mainAccountId`; Company TB filters by the account
+segment of its `account|company` (or `account|company|txnCurrency` in
+Transaction Currency mode) row keys, and the filter persists correctly
+across a currency-mode switch since both `render()` and
+`renderTransaction()` share the same `state.account` and filter widget.
+Intercompany has no single `mainAccountId` per row (each row nets one or
+two accounts per side), so it filters on whether the selected account is
+among that row's own `arAccountIds`/`apAccountIds` (either side, either
+company) rather than an exact match. Grand Totals recompute from the
+filtered row set, same as any other filter in this report (e.g. Company
+TB's per-company view) — a filtered total is that account's total, not an
+error.
+
+**2026-09-09, later same day: Main Account filter became a searchable
+combo box, and warning banners became collapsible.** Report-owner
+feedback: "In the main account dropdown can we have search also... Also,
+The warning message which appears can we close it and if users wants to
+check then they will click on details." The Main Account filter's plain
+`<select>` (hundreds of accounts, hard to scroll through) was replaced
+with `createAccountCombo()` — a text input backed by a custom dropdown
+panel: click to browse the full list, type to filter by account ID or name
+substring, click or Enter to select. All four tabs' filters share this one
+helper, keeping the exact same `.populate(accountMap, currentValue)` /
+resolved-value contract the old `populateAccountSelect()` had, so no
+render-side filtering logic needed to change. Separately, every
+`.banner` (control totals, simulated adjustments, reconciliation
+notes, accounting-currency-view notices) now renders through a shared
+`renderBanners()` helper: each banner shows a short one-line summary plus
+a close (&times;) button, with any longer explanatory text collapsed
+behind a "Details" toggle instead of always shown inline — a dismissed
+banner reappears on the next data reload since it reflects live data, not
+a one-time notice.
 
 ## What's here
 

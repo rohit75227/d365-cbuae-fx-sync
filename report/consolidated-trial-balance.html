@@ -251,16 +251,13 @@
   .view-panel[hidden]{ display:none; }
 
   .banner{
-    display:flex;
-    gap:10px;
-    align-items:flex-start;
     background:var(--warn-bg);
     border:1px solid var(--warn-border);
     color:var(--warn-text);
     border-radius:10px;
     padding:12px 16px;
     font-size:13px;
-    margin-bottom:16px;
+    margin-bottom:10px;
   }
   .banner strong{ font-family:"Review Condensed",Arial,sans-serif; text-transform:uppercase; letter-spacing:.04em; }
   .banner.simulated{
@@ -280,6 +277,80 @@
   }
   .banner .warning-item{ cursor:help; border-bottom:1px dotted currentColor; }
   .banner .hint{ opacity:.7; font-style:italic; }
+  .banner-row{ display:flex; align-items:flex-start; gap:10px; }
+  .banner-summary{ flex:1; min-width:0; }
+  .banner-link{
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:inherit;
+    font:inherit;
+    font-size:12px;
+    font-weight:700;
+    text-decoration:underline;
+    cursor:pointer;
+    padding:0;
+    white-space:nowrap;
+    flex:none;
+  }
+  .banner-link:hover{ opacity:.8; }
+  .banner-close{
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:inherit;
+    font-size:16px;
+    line-height:1;
+    cursor:pointer;
+    padding:0 2px;
+    opacity:.55;
+    flex:none;
+  }
+  .banner-close:hover{ opacity:1; }
+  .banner-detail{
+    margin-top:8px;
+    padding-top:8px;
+    border-top:1px solid currentColor;
+    opacity:.85;
+  }
+
+  .acct-combo{ position:relative; }
+  .acct-combo-input{
+    appearance:none;
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+    background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="%23454041"/></svg>') no-repeat right 12px center;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 32px 9px 14px;
+    min-width:220px;
+    cursor:text;
+  }
+  .acct-combo-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .acct-combo-panel{
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    z-index:20;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    max-height:280px;
+    overflow-y:auto;
+    min-width:280px;
+  }
+  .acct-combo-option{
+    padding:8px 12px;
+    font-size:13px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .acct-combo-option:hover, .acct-combo-option.active{ background:var(--total-row-bg); }
+  .acct-combo-option .acct-combo-name{ color:var(--text-dim); margin-left:6px; }
+  .acct-combo-empty{ padding:8px 12px; font-size:12px; color:var(--text-dim); font-style:italic; }
   td.simulated{
     background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(237,59,134,.12) 6px, rgba(237,59,134,.12) 12px);
     border-bottom:2px dashed var(--accent) !important;
@@ -499,7 +570,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
-      <select id="account-select" aria-label="Main account"></select>
+      <div class="acct-combo" id="account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <button type="button" class="btn-export" id="export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
@@ -546,7 +620,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
-      <select id="company-account-select" aria-label="Main account"></select>
+      <div class="acct-combo" id="company-account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <button type="button" class="btn-export" id="company-export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
@@ -591,7 +668,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
-      <select id="currency-account-select" aria-label="Main account"></select>
+      <div class="acct-combo" id="currency-account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <button type="button" class="btn-export" id="currency-export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
@@ -636,7 +716,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
-      <select id="intercompany-account-select" aria-label="Main account"></select>
+      <div class="acct-combo" id="intercompany-account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <button type="button" class="btn-export" id="intercompany-export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
@@ -700,21 +783,120 @@
     return escapeHtml(s).replace(/"/g, '&quot;');
   }
 
-  // Shared "Main Account" filter dropdown, used by all four views. Rebuilt
-  // on every render from whatever accounts are actually present that
-  // period (`accountMap` is {mainAccountId: mainAccountName}) rather than
-  // a fixed roster, since Consolidated is the only collection guaranteed to
-  // keep zero-balance accounts across periods. Falls back to "All Accounts"
-  // if the previously-selected account isn't present this time (e.g. a
-  // period/company/currency switch), instead of leaving a stale selection.
-  function populateAccountSelect(selectEl, accountMap, currentValue){
-    var ids = Object.keys(accountMap).sort();
-    selectEl.innerHTML = '<option value="ALL">All Accounts</option>' + ids.map(function(id){
-      return '<option value="' + escapeAttr(id) + '">' + escapeHtml(id) + ' – ' + escapeHtml(accountMap[id] || '') + '</option>';
+  // Shared "Main Account" search-combo filter, used by all four views: a
+  // text input (type to narrow the list, click/Enter to select) backed by
+  // a custom dropdown panel rather than a plain <select>, since the full
+  // account list is long enough that scrolling through it beats searching.
+  // `rootEl` is the wrapping <div class="acct-combo"> containing one
+  // `.acct-combo-input` and one `.acct-combo-panel`. `onSelect(value)`
+  // fires whenever the user picks an account (or "ALL"). Rebuilt on every
+  // render from whatever accounts are actually present that period
+  // (`accountMap` is {mainAccountId: mainAccountName}) rather than a fixed
+  // roster, since Consolidated is the only collection guaranteed to keep
+  // zero-balance accounts across periods -- `.populate()` falls back to
+  // "All Accounts" if the previously-selected account isn't present this
+  // time (e.g. a period/company/currency switch), instead of leaving a
+  // stale selection.
+  function createAccountCombo(rootEl, onSelect){
+    var input = rootEl.querySelector('.acct-combo-input');
+    var panel = rootEl.querySelector('.acct-combo-panel');
+    var accountMap = {};
+    var ids = [];
+    var currentValue = 'ALL';
+
+    function label(id){
+      return id === 'ALL' ? '' : id + (accountMap[id] ? ' – ' + accountMap[id] : '');
+    }
+
+    function renderPanel(filterText){
+      var q = (filterText || '').trim().toLowerCase();
+      var matches = !q ? ids : ids.filter(function(id){
+        return id.toLowerCase().indexOf(q) !== -1 || (accountMap[id] || '').toLowerCase().indexOf(q) !== -1;
+      });
+      var html = '<div class="acct-combo-option' + (currentValue === 'ALL' ? ' active' : '') + '" data-value="ALL">All Accounts</div>';
+      html += matches.length
+        ? matches.map(function(id){
+            return '<div class="acct-combo-option' + (id === currentValue ? ' active' : '') + '" data-value="' + escapeAttr(id) + '">' +
+              escapeHtml(id) + '<span class="acct-combo-name">' + escapeHtml(accountMap[id] || '') + '</span></div>';
+          }).join('')
+        : '<div class="acct-combo-empty">No matching accounts</div>';
+      panel.innerHTML = html;
+      panel.hidden = false;
+    }
+
+    function close(){ panel.hidden = true; }
+
+    function selectValue(id){
+      currentValue = id;
+      input.value = label(id);
+      close();
+      onSelect(currentValue);
+    }
+
+    input.addEventListener('focus', function(){ input.select(); renderPanel(''); });
+    input.addEventListener('input', function(){ renderPanel(input.value); });
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ close(); input.blur(); }
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        var first = panel.querySelector('.acct-combo-option[data-value]');
+        if (first) selectValue(first.getAttribute('data-value'));
+      }
+    });
+    input.addEventListener('blur', function(){ setTimeout(close, 150); });
+    panel.addEventListener('mousedown', function(e){
+      var opt = e.target.closest('.acct-combo-option[data-value]');
+      if (!opt) return;
+      e.preventDefault(); // keep focus on input so the blur-close timer above doesn't race this
+      selectValue(opt.getAttribute('data-value'));
+    });
+
+    return {
+      populate: function(newAccountMap, preferredValue){
+        accountMap = newAccountMap;
+        ids = Object.keys(accountMap).sort();
+        currentValue = ids.indexOf(preferredValue) !== -1 ? preferredValue : 'ALL';
+        input.value = label(currentValue);
+        return currentValue;
+      },
+    };
+  }
+
+  // Renders dismissible, collapsed-by-default banners into `hostEl`.
+  // `banners` is an array of { cls, title, summary, detail }: `summary` is
+  // always shown; `detail` (optional) stays hidden behind a "Details"
+  // toggle so a long control-total/simulated-adjustment message doesn't
+  // dominate the page -- omit `detail` for a banner already short enough
+  // to show in full. Every banner also gets a close (x) to dismiss it
+  // outright for this render; it reappears on the next data reload since
+  // dismissal isn't persisted (the banner reflects live data, not a
+  // one-time notice).
+  function renderBanners(hostEl, banners){
+    hostEl.innerHTML = banners.map(function(b, i){
+      return '<div class="banner ' + (b.cls || '') + '" data-banner-index="' + i + '">' +
+        '<div class="banner-row">' +
+          '<div class="banner-summary"><strong>' + b.title + ':</strong>&nbsp;' + b.summary + '</div>' +
+          (b.detail ? '<button type="button" class="banner-link banner-details-btn">Details</button>' : '') +
+          '<button type="button" class="banner-close" aria-label="Dismiss">&times;</button>' +
+        '</div>' +
+        (b.detail ? '<div class="banner-detail" hidden>' + b.detail + '</div>' : '') +
+      '</div>';
     }).join('');
-    var toSelect = ids.indexOf(currentValue) !== -1 ? currentValue : 'ALL';
-    selectEl.value = toSelect;
-    return toSelect;
+
+    Array.prototype.forEach.call(hostEl.querySelectorAll('.banner-close'), function(btn){
+      btn.addEventListener('click', function(){
+        var banner = btn.closest('.banner');
+        if (banner) banner.remove();
+      });
+    });
+    Array.prototype.forEach.call(hostEl.querySelectorAll('.banner-details-btn'), function(btn){
+      btn.addEventListener('click', function(){
+        var detail = btn.closest('.banner').querySelector('.banner-detail');
+        if (!detail) return;
+        detail.hidden = !detail.hidden;
+        btn.textContent = detail.hidden ? 'Details' : 'Hide details';
+      });
+    });
   }
 
   function prevPeriodKey(key){
@@ -782,7 +964,10 @@
     var notesHost = document.getElementById('notes-host');
     var periodSelect = document.getElementById('period-select');
     var ccyToggle = document.getElementById('ccy-toggle');
-    var accountSelect = document.getElementById('account-select');
+    var accountCombo = createAccountCombo(document.getElementById('account-combo'), function(value){
+      state.account = value;
+      if (state.periodKey) loadPeriod(state.periodKey);
+    });
     var exportBtn = document.getElementById('export-btn');
 
     function setStatus(text, stale){
@@ -819,21 +1004,33 @@
       warnings = warnings || [];
       var simulated = warnings.filter(function(w){ return w.indexOf('SIMULATED') !== -1; });
       var real = warnings.filter(function(w){ return w.indexOf('SIMULATED') === -1; });
-      var html = '';
+      var banners = [];
+      if (state.ccy === 'accounting'){
+        banners.push({
+          title: 'Accounting currency view',
+          summary: 'Each company is shown in its own local currency (see column subtitle).',
+          detail: 'Totals are hidden because summing different currencies would be misleading — switch to Reporting Currency for a consolidated total.',
+        });
+      }
       if (real.length){
-        html += '<div class="banner"><strong>Control totals:</strong>&nbsp;' +
-          real.map(warningItem).join(' &middot; ') +
-          '</div>';
+        banners.push({
+          title: 'Control totals',
+          summary: real.length + ' ' + (real.length === 1 ? 'exception' : 'exceptions') + ' this period',
+          detail: real.map(warningItem).join(' &middot; '),
+        });
       }
       if (simulated.length){
-        html += '<div class="banner simulated"><strong>Simulated adjustments:</strong>&nbsp;' +
-          simulated.map(warningItem).join(' &middot; ') +
-          ' <span class="hint">(cells marked &middot; hover for details)</span></div>';
+        banners.push({
+          cls: 'simulated',
+          title: 'Simulated adjustments',
+          summary: simulated.length + ' ' + (simulated.length === 1 ? 'entity includes' : 'entities include') + ' a not-yet-posted adjustment (cells marked &middot; hover for details).',
+          detail: simulated.map(warningItem).join(' &middot; '),
+        });
       }
       if (!real.length && !simulated.length){
-        html += '<div class="banner good"><strong>Every entity nets to zero.</strong>&nbsp;No control-total exceptions for this period.</div>';
+        banners.push({ cls: 'good', title: 'Every entity nets to zero', summary: 'No control-total exceptions for this period.' });
       }
-      bannerHost.innerHTML = html;
+      renderBanners(bannerHost, banners);
     }
 
     function renderTable(periodDoc, shardRows){
@@ -848,7 +1045,7 @@
 
       var accountMap = {};
       shardRows.forEach(function(r){ accountMap[r.mainAccountId] = r.mainAccountName; });
-      state.account = populateAccountSelect(accountSelect, accountMap, state.account);
+      state.account = accountCombo.populate(accountMap, state.account);
       var visibleRows = state.account === 'ALL' ? shardRows : shardRows.filter(function(r){ return r.mainAccountId === state.account; });
 
       var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
@@ -932,11 +1129,6 @@
         '</table></div></div>';
 
       notesHost.hidden = false;
-      if (ccy === 'accounting'){
-        bannerHost.innerHTML =
-          '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see column subtitle). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency for a consolidated total.</div>' +
-          bannerHost.innerHTML;
-      }
 
       state.lastExport = {
         rows: exportRows,
@@ -1009,11 +1201,6 @@
     periodSelect.addEventListener('change', function(){
       state.periodKey = periodSelect.value;
       loadPeriod(state.periodKey);
-    });
-
-    accountSelect.addEventListener('change', function(){
-      state.account = accountSelect.value;
-      if (state.periodKey) loadPeriod(state.periodKey);
     });
 
     exportBtn.addEventListener('click', function(){
@@ -1138,7 +1325,10 @@
     var companySelect = document.getElementById('company-select');
     var periodSelect = document.getElementById('company-period-select');
     var ccyToggle = document.getElementById('company-ccy-toggle');
-    var accountSelect = document.getElementById('company-account-select');
+    var accountCombo = createAccountCombo(document.getElementById('company-account-combo'), function(value){
+      state.account = value;
+      render();
+    });
     var exportBtn = document.getElementById('company-export-btn');
 
     function setStatus(text, stale){
@@ -1262,7 +1452,7 @@
           var oe = openingByKey[k], ce = closingByKey[k], m = movementByKey[k];
           accountMap[id] = (ce && ce.name) || (oe && oe.name) || (m && m.mainAccountName) || '';
         });
-        state.account = populateAccountSelect(accountSelect, accountMap, state.account);
+        state.account = accountCombo.populate(accountMap, state.account);
         if (state.account !== 'ALL'){
           keys = keys.filter(function(k){ return k.split('|')[0] === state.account; });
           if (!keys.length){
@@ -1333,15 +1523,18 @@
           '</table></div></div>';
 
         if (!showTotals){
-          bannerHost.innerHTML =
-            '<div class="banner"><strong>All Companies &middot; Accounting currency view:</strong>&nbsp;each company is shown in its own local currency (see the Company column). Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency, or pick a single company, to see them.</div>';
+          renderBanners(bannerHost, [{
+            title: 'All Companies &middot; Accounting currency view',
+            summary: 'Each company is shown in its own local currency (see the Company column).',
+            detail: 'Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency, or pick a single company, to see them.',
+          }]);
         } else {
           var netMovement = totals.dr - totals.cr;
           var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
           var subject = isAll ? 'all companies' : selectedCompany;
-          bannerHost.innerHTML = reconciles
-            ? '<div class="banner good"><strong>Reconciles:</strong>&nbsp;Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + '.</div>'
-            : '<div class="banner"><strong>Note:</strong>&nbsp;Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.</div>';
+          renderBanners(bannerHost, [reconciles
+            ? { cls: 'good', title: 'Reconciles', summary: 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + '.' }
+            : { title: 'Note', summary: 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.', detail: 'Likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.' }]);
         }
 
         notesHost.hidden = false;
@@ -1457,7 +1650,7 @@
           var oe = openingByKey[k], ce = closingByKey[k], m = movementByKey[k];
           accountMap[id] = (ce && ce.name) || (oe && oe.name) || (m && m.mainAccountName) || '';
         });
-        state.account = populateAccountSelect(accountSelect, accountMap, state.account);
+        state.account = accountCombo.populate(accountMap, state.account);
         if (state.account !== 'ALL'){
           keys = keys.filter(function(k){ return k.split('|')[0] === state.account; });
           if (!keys.length){
@@ -1525,12 +1718,15 @@
         var netMovement = totals.dr - totals.cr;
         var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
         var subject = isAll ? 'all companies' : selectedCompany;
-        bannerHost.innerHTML =
-          '<div class="banner ' + (reconciles ? 'good' : '') + '"><strong>' + (reconciles ? 'Reconciles' : 'Note') + ':</strong>&nbsp;' +
-          (reconciles
-            ? 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + ' (checked per row, before summing across currencies).'
-            : 'Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between syncs. Re-sync to refresh.') +
-          ' The Grand Total row adds figures posted in different currencies together and will not be a meaningful single amount &mdash; shown anyway rather than hidden, since each row above it is correct in its own currency.</div>';
+        renderBanners(bannerHost, [{
+          cls: reconciles ? 'good' : '',
+          title: reconciles ? 'Reconciles' : 'Note',
+          summary: reconciles
+            ? 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + ' (checked per row).'
+            : 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.',
+          detail: (reconciles ? '' : 'Likely new Databricks activity landed between syncs. Re-sync to refresh. ') +
+            'The Grand Total row adds figures posted in different currencies together and will not be a meaningful single amount &mdash; shown anyway rather than hidden, since each row above it is correct in its own currency.',
+        }]);
 
         notesHost.hidden = false;
         setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
@@ -1572,8 +1768,6 @@
       Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){ b.classList.toggle('active', b === btn); });
       render();
     });
-    accountSelect.addEventListener('change', function(){ state.account = accountSelect.value; render(); });
-
     exportBtn.addEventListener('click', function(){
       if (!state.lastExport) return;
       exportRowsToXlsx(state.lastExport.filename, 'Company TB', state.lastExport.rows, exportBtn);
@@ -1615,7 +1809,10 @@
     var companySelect = document.getElementById('currency-company-select');
     var periodSelect = document.getElementById('currency-period-select');
     var ccyToggle = document.getElementById('currency-ccy-toggle');
-    var accountSelect = document.getElementById('currency-account-select');
+    var accountCombo = createAccountCombo(document.getElementById('currency-account-combo'), function(value){
+      state.account = value;
+      render();
+    });
     var exportBtn = document.getElementById('currency-export-btn');
 
     function setStatus(text, stale){
@@ -1717,7 +1914,7 @@
           var id = keyAccount(k);
           if (id && !accountMap[id]) accountMap[id] = keyAccountName(k);
         });
-        state.account = populateAccountSelect(accountSelect, accountMap, state.account);
+        state.account = accountCombo.populate(accountMap, state.account);
         if (state.account !== 'ALL'){
           keys = keys.filter(function(k){ return keyAccount(k) === state.account; });
           if (!keys.length){
@@ -1786,9 +1983,9 @@
 
         var netMovement = totals.dr - totals.cr;
         var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
-        bannerHost.innerHTML = reconciles
-          ? '<div class="banner good"><strong>Reconciles:</strong>&nbsp;Opening + Dr &minus; Cr = Closing for ' + company + ', ' + periodLabelFromKey(key) + ' (summed across currencies).</div>'
-          : '<div class="banner"><strong>Note:</strong>&nbsp;Opening + Dr &minus; Cr does not exactly equal Closing for this period &mdash; likely new Databricks activity landed between syncs. Re-sync to refresh.</div>';
+        renderBanners(bannerHost, [reconciles
+          ? { cls: 'good', title: 'Reconciles', summary: 'Opening + Dr &minus; Cr = Closing for ' + company + ', ' + periodLabelFromKey(key) + ' (summed across currencies).' }
+          : { title: 'Note', summary: 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.', detail: 'Likely new Databricks activity landed between syncs. Re-sync to refresh.' }]);
 
         notesHost.hidden = false;
         setStatus('FY' + cur.doc.fiscalYear + ' P' + cur.doc.period + ' · ' + company + ' · ' + keys.length + ' rows', false);
@@ -1829,8 +2026,6 @@
       Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){ b.classList.toggle('active', b === btn); });
       render();
     });
-    accountSelect.addEventListener('change', function(){ state.account = accountSelect.value; render(); });
-
     exportBtn.addEventListener('click', function(){
       if (!state.lastExport) return;
       exportRowsToXlsx(state.lastExport.filename, 'By Currency', state.lastExport.rows, exportBtn);
@@ -1939,7 +2134,10 @@
     var companySelect = document.getElementById('intercompany-company-select');
     var periodSelect = document.getElementById('intercompany-period-select');
     var ccyToggle = document.getElementById('intercompany-ccy-toggle');
-    var accountSelect = document.getElementById('intercompany-account-select');
+    var accountCombo = createAccountCombo(document.getElementById('intercompany-account-combo'), function(value){
+      state.account = value;
+      render();
+    });
     var exportBtn = document.getElementById('intercompany-export-btn');
 
     function setStatus(text, stale){
@@ -2079,7 +2277,7 @@
           return entityMetaByCode[a.counterparty].order - entityMetaByCode[b.counterparty].order;
         });
 
-        state.account = populateAccountSelect(accountSelect, trackedAccountNameById, state.account);
+        state.account = accountCombo.populate(trackedAccountNameById, state.account);
         if (state.account !== 'ALL'){
           rows = rows.filter(function(r){
             return r.arAccountIds.indexOf(state.account) !== -1 || r.apAccountIds.indexOf(state.account) !== -1;
@@ -2178,14 +2376,17 @@
           '</table></div></div>';
 
         if (!showTotals){
-          bannerHost.innerHTML =
-            '<div class="banner"><strong>Accounting currency view:</strong>&nbsp;Company and Offset Company can each be in a different local currency (see the ccy tag under each), so the two Net Balance columns are not always directly comparable and Difference is hidden &mdash; switch to Reporting Currency to see it.</div>';
+          renderBanners(bannerHost, [{
+            title: 'Accounting currency view',
+            summary: 'Company and Offset Company can each be in a different local currency (see the ccy tag under each).',
+            detail: 'The two Net Balance columns are not always directly comparable and Difference is hidden &mdash; switch to Reporting Currency to see it.',
+          }]);
         } else {
           var reconciled = Math.abs(totals.diff) < 1;
           var subject = isAll ? 'all companies' : selectedCompany;
-          bannerHost.innerHTML = reconciled
-            ? '<div class="banner good"><strong>Reconciled:</strong>&nbsp;Net Balance + Offset Net Balance nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.</div>'
-            : '<div class="banner"><strong>Note:</strong>&nbsp;Net Balance + Offset Net Balance does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ') &mdash; an intercompany imbalance to investigate, not a data error.</div>';
+          renderBanners(bannerHost, [reconciled
+            ? { cls: 'good', title: 'Reconciled', summary: 'Net Balance + Offset Net Balance nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.' }
+            : { title: 'Note', summary: 'Net Balance + Offset Net Balance does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ').', detail: 'An intercompany imbalance to investigate, not a data error.' }]);
         }
 
         notesHost.hidden = false;
@@ -2234,8 +2435,6 @@
       });
       render();
     });
-    accountSelect.addEventListener('change', function(){ state.account = accountSelect.value; render(); });
-
     exportBtn.addEventListener('click', function(){
       if (!state.lastExport) return;
       exportRowsToXlsx(state.lastExport.filename, 'Intercompany', state.lastExport.rows, exportBtn);
