@@ -659,18 +659,18 @@
       <select id="company-period-select" aria-label="Fiscal year and period"></select>
     </div>
     <div class="control-group">
+      <span class="eyebrow">Main Account</span>
+      <div class="acct-combo" id="company-account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
+    </div>
+    <div class="control-group">
       <span class="eyebrow">Currency</span>
       <div class="segmented" id="company-ccy-toggle" role="group" aria-label="Currency basis">
         <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
         <button type="button" data-ccy="accounting">Accounting</button>
         <button type="button" data-ccy="transaction">Transaction Currency</button>
-      </div>
-    </div>
-    <div class="control-group">
-      <span class="eyebrow">Main Account</span>
-      <div class="acct-combo" id="company-account-combo">
-        <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
-        <div class="acct-combo-panel" hidden></div>
       </div>
     </div>
     <button type="button" class="btn-export" id="company-export-btn" disabled>Export to Excel</button>
@@ -708,17 +708,17 @@
       <select id="currency-period-select" aria-label="Fiscal year and period"></select>
     </div>
     <div class="control-group">
-      <span class="eyebrow">Currency</span>
-      <div class="segmented" id="currency-ccy-toggle" role="group" aria-label="Currency basis">
-        <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
-        <button type="button" data-ccy="accounting">Accounting</button>
-      </div>
-    </div>
-    <div class="control-group">
       <span class="eyebrow">Main Account</span>
       <div class="acct-combo" id="currency-account-combo">
         <input type="text" class="acct-combo-input" placeholder="All Accounts" autocomplete="off" aria-label="Search main account">
         <div class="acct-combo-panel" hidden></div>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Currency</span>
+      <div class="segmented" id="currency-ccy-toggle" role="group" aria-label="Currency basis">
+        <button type="button" data-ccy="reporting" class="active">Reporting (USD)</button>
+        <button type="button" data-ccy="accounting">Accounting</button>
       </div>
     </div>
     <button type="button" class="btn-export" id="currency-export-btn" disabled>Export to Excel</button>
@@ -1773,7 +1773,8 @@
 
     function populate(entities){
       state.entities = entities;
-      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + entities.map(function(e){
+      var sortedEntities = entities.slice().sort(function(a, b){ return a.code.localeCompare(b.code); });
+      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + sortedEntities.map(function(e){
         return '<option value="' + e.code + '">' + e.code + '</option>';
       }).join('');
       if (!state.company) state.company = 'ALL';
@@ -2031,10 +2032,11 @@
     }
 
     function populate(entities){
-      companySelect.innerHTML = entities.map(function(e){
+      var sortedEntities = entities.slice().sort(function(a, b){ return a.code.localeCompare(b.code); });
+      companySelect.innerHTML = sortedEntities.map(function(e){
         return '<option value="' + e.code + '">' + e.code + '</option>';
       }).join('');
-      if (!state.company && entities.length) state.company = entities[0].code;
+      if (!state.company && sortedEntities.length) state.company = sortedEntities[0].code;
       companySelect.value = state.company;
 
       periodSelect.innerHTML = index.map(function(p){
@@ -2470,7 +2472,8 @@
 
     function populate(entities){
       state.entities = entities;
-      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + entities.map(function(e){
+      var sortedEntities = entities.slice().sort(function(a, b){ return a.code.localeCompare(b.code); });
+      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + sortedEntities.map(function(e){
         return '<option value="' + e.code + '">' + e.code + '</option>';
       }).join('');
       if (!state.company) state.company = 'ALL';
