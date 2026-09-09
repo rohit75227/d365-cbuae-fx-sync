@@ -1058,8 +1058,8 @@
       if (state.ccy === 'accounting'){
         banners.push({
           title: 'Accounting currency view',
-          summary: 'Each company is shown in its own local currency (see column subtitle).',
-          detail: 'Totals are hidden because summing different currencies would be misleading — switch to Reporting Currency for a consolidated total.',
+          summary: 'Each company is shown in its own local currency (see column subtitle); the rightmost Total column and Grand Total row sum across those currencies.',
+          detail: 'Per-company column totals are each a single, meaningful currency. The rightmost Total column and the bottom-right Grand Total add different currencies together and are not an economically meaningful single figure — switch to Reporting Currency for a true consolidated total.',
         });
       }
       if (real.length){
@@ -1086,7 +1086,6 @@
     function renderTable(periodDoc, shardRows){
       var entities = periodDoc.entities || [];
       var ccy = state.ccy;
-      var showTotals = ccy === 'reporting';
 
       var simulatedMap = {};
       (periodDoc.simulatedAdjustments || []).forEach(function(adj){
@@ -1103,9 +1102,7 @@
         var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
         thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
       });
-      thead += showTotals
-        ? '<th class="col-total">Total<span class="ccy-tag">USD</span></th>'
-        : '<th class="col-total na-note">Total<span class="ccy-tag">mixed ccy</span></th>';
+      thead += '<th class="col-total">Total<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'mixed ccy') + '</span></th>';
       thead += '</tr>';
 
       var totalsByEntity = {};
@@ -1115,7 +1112,7 @@
       var exportHeader = ['Main Account', 'Main Account Name'].concat(entities.map(function(e){
         return e.code + ' (' + (ccy === 'reporting' ? 'USD' : e.accountingCurrency) + ')';
       }));
-      if (showTotals) exportHeader.push('Total (USD)');
+      exportHeader.push(ccy === 'reporting' ? 'Total (USD)' : 'Total (mixed ccy)');
       var exportRows = [exportHeader];
 
       var bodyRows = visibleRows.map(function(acc){
@@ -1131,20 +1128,12 @@
           var cellTitle = adj ? ' title="' + escapeAttr(adj.reason) + '"' : '';
           row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
           exportRow.push(raw === null ? null : raw);
-          if (ccy === 'reporting'){
-            if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
-          } else {
-            if (raw !== null){ totalsByEntity[e.code] += raw; }
-          }
+          if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
         });
-        if (showTotals){
-          var ft = fmtAmount(rowTotal);
-          row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
-          grandTotal += rowTotal;
-          exportRow.push(rowTotal);
-        } else {
-          row += '<td class="col-total na">n/a</td>';
-        }
+        var ft = fmtAmount(rowTotal);
+        row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
+        grandTotal += rowTotal;
+        exportRow.push(rowTotal);
         exportRows.push(exportRow);
         row += '</tr>';
         return row;
@@ -1153,22 +1142,13 @@
       var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td>';
       var exportFootRow = ['Grand Total', ''];
       entities.forEach(function(e){
-        if (ccy === 'accounting'){
-          footRow += '<td class="na-note">n/a</td>';
-          exportFootRow.push(null);
-        } else {
-          var f = fmtAmount(totalsByEntity[e.code]);
-          footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
-          exportFootRow.push(totalsByEntity[e.code]);
-        }
+        var f = fmtAmount(totalsByEntity[e.code]);
+        footRow += '<td class="' + f.cls + '">' + f.text + '</td>';
+        exportFootRow.push(totalsByEntity[e.code]);
       });
-      if (showTotals){
-        var fg = fmtAmount(grandTotal);
-        footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
-        exportFootRow.push(grandTotal);
-      } else {
-        footRow += '<td class="col-total na">n/a</td>';
-      }
+      var fg = fmtAmount(grandTotal);
+      footRow += '<td class="col-total ' + fg.cls + '">' + fg.text + '</td>';
+      exportFootRow.push(grandTotal);
       exportRows.push(exportFootRow);
 
       reportHost.innerHTML =
@@ -1433,12 +1413,14 @@
         }
 
         // "All Companies" + Accounting mixes currencies across rows (each
-        // company in its own local currency), so a single summed total
-        // would be meaningless -- same reasoning as Consolidated's
-        // accounting-view total suppression. A single company's own
-        // Accounting-currency figures are still one consistent currency,
-        // so totals stay meaningful there.
-        var showTotals = ccy === 'reporting' || !isAll;
+        // company in its own local currency) -- the Grand Total then sums
+        // different currencies together, which isn't a single meaningful
+        // figure, but is shown anyway (flagged via a banner below) rather
+        // than hidden, same precedent as the Transaction Currency mode and
+        // the By Currency tab's own Grand Total. A single company's own
+        // Accounting-currency figures are one consistent currency, so
+        // totals are always meaningful there.
+        var mixedCcyTotals = ccy === 'accounting' && isAll;
         var headerCcyLabel = ccy === 'reporting' ? 'USD' : (isAll ? 'mixed ccy' : rowCcyLabel(selectedCompany));
 
         // Key rows by "account|company" so "All Companies" can show every
@@ -1519,9 +1501,7 @@
           '<th>Opening Balance</th>' +
           '<th>Current Month Dr</th>' +
           '<th>Current Month Cr</th>' +
-          (showTotals
-            ? '<th class="col-total">Closing Balance</th>'
-            : '<th class="col-total na-note">Closing Balance</th>') +
+          '<th class="col-total">Closing Balance</th>' +
           '</tr>';
 
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
@@ -1555,17 +1535,13 @@
         }).join('');
 
         var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
-        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-company"></td><td class="col-ccy">' + (showTotals ? escapeHtml(headerCcyLabel) : '') + '</td>';
-        if (showTotals){
-          footRow += '<td class="' + fo.cls + '">' + fo.text + '</td>' +
-            '<td class="' + fd.cls + '">' + fd.text + '</td>' +
-            '<td class="' + fc.cls + '">' + fc.text + '</td>' +
-            '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
-          exportRows.push(['Grand Total', '', '', '', totals.opening, totals.dr, totals.cr, totals.closing]);
-        } else {
-          footRow += '<td class="na-note">n/a</td><td class="na-note">n/a</td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
-          exportRows.push(['Grand Total', '', '', '', null, null, null, null]);
-        }
+        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-company"></td>' +
+          '<td class="col-ccy">' + (mixedCcyTotals ? 'mixed' : escapeHtml(headerCcyLabel)) + '</td>' +
+          '<td class="' + fo.cls + '">' + fo.text + '</td>' +
+          '<td class="' + fd.cls + '">' + fd.text + '</td>' +
+          '<td class="' + fc.cls + '">' + fc.text + '</td>' +
+          '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
+        exportRows.push(['Grand Total', '', '', mixedCcyTotals ? 'mixed' : headerCcyLabel, totals.opening, totals.dr, totals.cr, totals.closing]);
 
         reportHost.innerHTML =
           '<div class="table-card"><div class="table-scroll"><table>' +
@@ -1574,20 +1550,21 @@
             '<tfoot><tr>' + footRow + '</tr></tfoot>' +
           '</table></div></div>';
 
-        if (!showTotals){
-          renderBanners(bannerHost, [{
+        var banners = [];
+        if (mixedCcyTotals){
+          banners.push({
             title: 'All Companies &middot; Accounting currency view',
-            summary: 'Each company is shown in its own local currency (see the Company column).',
-            detail: 'Totals are hidden because summing different currencies would be misleading &mdash; switch to Reporting Currency, or pick a single company, to see them.',
-          }]);
-        } else {
-          var netMovement = totals.dr - totals.cr;
-          var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
-          var subject = isAll ? 'all companies' : selectedCompany;
-          renderBanners(bannerHost, [reconciles
-            ? { cls: 'good', title: 'Reconciles', summary: 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + '.' }
-            : { title: 'Note', summary: 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.', detail: 'Likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.' }]);
+            summary: 'Each company is shown in its own local currency (see the Currency column); the Grand Total sums across those currencies.',
+            detail: 'The Grand Total row adds figures posted in different currencies together and is not a single meaningful amount &mdash; shown anyway rather than hidden, since each row above it is correct in its own currency. Switch to Reporting Currency, or pick a single company, for a true total.',
+          });
         }
+        var netMovement = totals.dr - totals.cr;
+        var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
+        var subject = isAll ? 'all companies' : selectedCompany;
+        banners.push(reconciles
+          ? { cls: 'good', title: 'Reconciles', summary: 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + '.' }
+          : { title: 'Note', summary: 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.', detail: 'Likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.' });
+        renderBanners(bannerHost, banners);
 
         notesHost.hidden = false;
         setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
@@ -2220,7 +2197,12 @@
 
       var entityMetaByCode = {};
       (state.entities || []).forEach(function(e, i){ entityMetaByCode[e.code] = { meta: e, order: i }; });
-      var showTotals = ccy === 'reporting';
+      // In Accounting mode, Company and Offset Company can each be in a
+      // different local currency, so Difference (and the Grand Total row)
+      // sum different currencies together -- not a single meaningful
+      // figure, but shown anyway (flagged via a banner below) rather than
+      // hidden, same precedent as Consolidated's Total column.
+      var mixedCcyTotals = ccy === 'accounting';
 
       Promise.all([
         loadShardedDoc('intercompany', key),
@@ -2412,12 +2394,10 @@
           '<th class="col-company">Offset Company</th>' +
           '<th class="col-acct">Offset Account</th>' +
           '<th>Offset Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
-          (showTotals
-            ? '<th class="col-total">Difference<span class="ccy-tag">USD</span></th>'
-            : '<th class="col-total na-note">Difference<span class="ccy-tag">mixed ccy</span></th>') +
+          '<th class="col-total">Difference<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'mixed ccy') + '</span></th>' +
           '</tr>';
 
-        var exportHeader = ['Company', 'Account', 'Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Offset Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (showTotals ? ' (USD)' : '')];
+        var exportHeader = ['Company', 'Account', 'Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Offset Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (ccy === 'reporting' ? ' (USD)' : ' (mixed ccy)')];
         var exportRows = [exportHeader];
 
         var totals = { ar: 0, payable: 0, diff: 0 };
@@ -2431,34 +2411,26 @@
           var arTxnHtml = state.showTxnDetails ? txnBreakdownHtml(txnBreakdown(r.arAccountIds, r.company)) : '';
           var apTxnHtml = state.showTxnDetails ? txnBreakdownHtml(txnBreakdown(r.apAccountIds, r.counterparty)) : '';
 
-          exportRows.push([r.company, arAcct.title || arAcct.code, r.arValue, r.counterparty, apAcct.title || apAcct.code, r.payableValue, showTotals ? difference : null]);
+          exportRows.push([r.company, arAcct.title || arAcct.code, r.arValue, r.counterparty, apAcct.title || apAcct.code, r.payableValue, difference]);
 
+          var fd = fmtAmount(difference);
           var row = '<tr>' +
             '<td class="col-company">' + escapeHtml(r.company) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.company)) + '</span></td>' +
             acctCellHtml(arAcct) +
             '<td class="' + fAr.cls + '">' + fAr.text + arTxnHtml + '</td>' +
             '<td class="col-company">' + escapeHtml(r.counterparty) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.counterparty)) + '</span></td>' +
             acctCellHtml(apAcct) +
-            '<td class="' + fPay.cls + '">' + fPay.text + apTxnHtml + '</td>';
-          if (showTotals){
-            var fd = fmtAmount(difference);
-            row += '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>';
-          } else {
-            row += '<td class="col-total na">n/a</td>';
-          }
-          row += '</tr>';
+            '<td class="' + fPay.cls + '">' + fPay.text + apTxnHtml + '</td>' +
+            '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>' +
+            '</tr>';
           return row;
         }).join('');
 
-        var footRow = '<td class="col-company">Grand Total</td><td class="col-acct"></td>';
-        if (showTotals){
-          var fAt = fmtAmount(totals.ar), fPt = fmtAmount(totals.payable), fDt = fmtAmount(totals.diff);
-          footRow += '<td class="' + fAt.cls + '">' + fAt.text + '</td><td class="col-company"></td><td class="col-acct"></td><td class="' + fPt.cls + '">' + fPt.text + '</td><td class="col-total ' + fDt.cls + '">' + fDt.text + '</td>';
-          exportRows.push(['Grand Total', '', totals.ar, '', '', totals.payable, totals.diff]);
-        } else {
-          footRow += '<td class="na-note">n/a</td><td class="col-company"></td><td class="col-acct"></td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
-          exportRows.push(['Grand Total', '', null, '', '', null, null]);
-        }
+        var fAt = fmtAmount(totals.ar), fPt = fmtAmount(totals.payable), fDt = fmtAmount(totals.diff);
+        var footRow = '<td class="col-company">Grand Total</td><td class="col-acct"></td>' +
+          '<td class="' + fAt.cls + '">' + fAt.text + '</td><td class="col-company"></td><td class="col-acct"></td>' +
+          '<td class="' + fPt.cls + '">' + fPt.text + '</td><td class="col-total ' + fDt.cls + '">' + fDt.text + '</td>';
+        exportRows.push(['Grand Total', '', totals.ar, '', '', totals.payable, totals.diff]);
 
         reportHost.innerHTML =
           '<div class="table-card"><div class="table-scroll"><table>' +
@@ -2467,19 +2439,20 @@
             '<tfoot><tr>' + footRow + '</tr></tfoot>' +
           '</table></div></div>';
 
-        if (!showTotals){
-          renderBanners(bannerHost, [{
+        var banners = [];
+        if (mixedCcyTotals){
+          banners.push({
             title: 'Accounting currency view',
-            summary: 'Company and Offset Company can each be in a different local currency (see the ccy tag under each).',
-            detail: 'The two Net Balance columns are not always directly comparable and Difference is hidden &mdash; switch to Reporting Currency to see it.',
-          }]);
-        } else {
-          var reconciled = Math.abs(totals.diff) < 1;
-          var subject = isAll ? 'all companies' : selectedCompany;
-          renderBanners(bannerHost, [reconciled
-            ? { cls: 'good', title: 'Reconciled', summary: 'Net Balance + Offset Net Balance nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.' }
-            : { title: 'Note', summary: 'Net Balance + Offset Net Balance does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ').', detail: 'An intercompany imbalance to investigate, not a data error.' }]);
+            summary: 'Company and Offset Company can each be in a different local currency (see the ccy tag under each); Difference and the Grand Total sum across those currencies.',
+            detail: 'The two Net Balance columns are each a single, meaningful currency, but Difference and the Grand Total add different currencies together and are not a single meaningful amount &mdash; shown anyway rather than hidden. Switch to Reporting Currency for a true difference.',
+          });
         }
+        var reconciled = Math.abs(totals.diff) < 1;
+        var subject = isAll ? 'all companies' : selectedCompany;
+        banners.push(reconciled
+          ? { cls: 'good', title: 'Reconciled', summary: 'Net Balance + Offset Net Balance nets to zero across ' + subject + ' for ' + periodLabelFromKey(key) + '.' }
+          : { title: 'Note', summary: 'Net Balance + Offset Net Balance does not net to zero across ' + subject + ' for ' + periodLabelFromKey(key) + ' (' + fmtAmount(totals.diff).text + ').', detail: 'An intercompany imbalance to investigate, not a data error.' });
+        renderBanners(bannerHost, banners);
 
         notesHost.hidden = false;
         setStatus('FY' + cur.doc.fiscalYear + ' P' + cur.doc.period + ' · ' + rows.length + ' relationship' + (rows.length === 1 ? '' : 's'), false);
