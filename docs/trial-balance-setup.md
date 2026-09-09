@@ -833,6 +833,84 @@ of those dropped accounts' prior balances.
   correctly does not (per its own footer note), plus sub-cent floating
   point noise on ~127 keys — nothing material or unexplained.
 
+## Consolidated tab: historical `tb` backfill silently dropped zero-balance rows (real bug, fixed 2026-09-09)
+
+**Report owner reported**: running the Consolidated tab for HBDM, Dec
+2025, showed the Closing Balance as zero for every line — expected it to
+show HBDM's real closing balance instead.
+
+**Root cause, traced and fixed same day**: unlike the rendering bug above
+(which affects the Company TB / By Currency tabs' live joins), this one is
+in the historical **data itself**. Both `scripts/build_series_from_movement.py`
+and `scripts/backfill_all_periods.py` — used to reconstruct the full
+2019-01 through 2026-09 `tb` history from monthly Dr/Cr movement deltas —
+skipped writing a period's (entity, account) row whenever its cumulative
+balance netted to `abs() < 0.005` in *both* accounting and reporting
+currency, even for a Balance Sheet account with a long, real history. That
+condition triggers any time an account happens to net to exactly zero in
+some period relative to its running total — not just "never had activity"
+— so an account could silently vanish from one period's `tb` document and
+reappear in a later one, violating the `tb` collection's own invariant
+that once an (entity, account) has any activity it must appear in every
+subsequent period, even as an explicit 0.00 (this is deliberately
+different from `currencytb`, which intentionally drops near-zero currency
+buckets).
+
+- **How HBDM Dec 2025 triggered it**: Databricks confirms a large, real,
+  coordinated intercompany settlement/restructuring for HBDM dated exactly
+  31-Dec-2025 (dozens of paired `GJV-*` journal vouchers plus HBDM's `CLG`
+  year-end closing voucher) that nets all 284 of HBDM's accounts to
+  floating-point-noise-level zero that day. The buggy skip condition
+  interpreted every one of those as "no balance, omit the row," so the
+  entire company disappeared from that period's `tb` shard instead of
+  showing 284 real $0.00 lines.
+- **Scope**: not limited to HBDM or December — this triggers on any
+  (entity, account, period) combination that nets to zero, which happens
+  routinely. Confirmed severe corruption in `tb/2022-12` (9 rows total,
+  missing nearly the entire company set), `tb/2023-12`, `tb/2024-12`, and
+  `tb/2025-12` (33 rows / 6 entities, missing HBDM, HBUS, and 9 others)
+  before the fix.
+- **Fix**: track `first_ym`, the earliest period each (entity, account)
+  ever had real movement in the raw Databricks data, and only skip a
+  period if it falls *strictly before* that first activity (i.e. the
+  account genuinely didn't exist yet). Never skip afterward, regardless of
+  the computed balance.
+- **Regeneration, not a re-query**: reused the same cached, paginated
+  `sql/monthly_movement.sql` results from the original 2026-09-03/04
+  backfill (62,925 rows, integrity-checked) rather than re-querying
+  Databricks, so the fix is a pure recomputation from already-validated
+  raw data. Regenerated all 93 periods with the fixed script.
+- **Validated before publishing**: diffed the fixed Nov 2025 output
+  against the previously-live data — purely additive (658 previously-
+  missing keys restored, zero existing keys removed), with only 2 value
+  differences, both on the HBCB/HBFR simulated Retained Earnings
+  adjustment (attributable to that adjustment being recomputed against
+  now-complete underlying data, not a regression). Also re-verified Opening +
+  Dr − Cr = Closing across 2,047 account/entity combinations for the Dec
+  2025 sample with zero mismatches.
+- **What got published**: pushed the corrected 91 periods (2019-01 through
+  2026-07) to the live `tb` collection, then refreshed `tb/index` with a
+  matching `generatedAt`. **2026-08 and 2026-09 were deliberately excluded**
+  from this push — both had already been freshly rebuilt from live
+  Databricks queries earlier in the same work session (including a
+  backdating-drift correction specific to August), so overwriting them with
+  the cache-derived regeneration would have reverted that more recent,
+  already-validated work.
+- **Important caveat, not a defect**: after this fix, HBDM's Dec 2025
+  Closing Balance on the Consolidated tab will still correctly show as
+  ~$0.00 for virtually every line — because that genuinely is HBDM's real
+  balance as of 31-Dec-2025, per the intercompany settlement described
+  above. The fix corrects the report from silently hiding those accounts
+  (making it look like data was missing) to explicitly and correctly
+  showing them as real $0.00 lines; it does not and should not change the
+  underlying value, since that value is real GL data. Worth an independent
+  check with finance given the scale of the settlement, not something the
+  report can or should override.
+- **No republish needed**: this is a data-layer-only fix (the `tb`
+  documents themselves), so the existing published report picks up the
+  corrected data automatically on next load — no changes to the Artifact's
+  HTML/JS were required.
+
 ## Business rules baked into the query (confirmed with the report owner)
 
 - **Balance Sheet** (`mainaccountid` 1,000,000–3,999,999): cumulative from
