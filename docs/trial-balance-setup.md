@@ -335,6 +335,26 @@ across every (account, entity) combination for the current period, not
 just a sample, before considering the sync done (the file shapes are small
 enough for this to be a cheap, ordinary Python check, not an approximation).
 
+**2026-09-09 daily sync: backdating drift recurred on August, confirming
+this needs checking every day, not just once.** FY2026 P9's sync found
+August's already-published `tb` stale by up to $97.5M on one account
+(`1122105`/HBFZ) — 132 of 1,726 (account, entity) combinations off by more
+than $1, ~$259M total absolute drift, all ordinary late-dated GL activity
+(same pattern as the 2026-09-05 finding above, recurring independently).
+Refreshed August's `tb`, `currencytb`, `movement`, and `currencymovement`
+alongside September's per the procedure above; validated Opening + Dr − Cr
+= Closing across every (account, entity) combination for both periods
+(1,726 and 1,727 combos respectively, zero mismatches beyond the three
+active simulated-adjustment cells). Also noted while cross-checking
+`currencytb` against `tb`: HBBV's `reportingCurrencyFallback` override is
+applied unconditionally in `build_currency_series.py` (always substitutes
+accounting for reporting) but only conditionally (only when reporting is
+literally NULL) in `transform_connector_result.py` — a small (~$3,785),
+pre-existing inconsistency between how `tb` and `currencytb` handle that
+one entity's reporting-currency fallback, not something introduced by this
+sync. Not fixed here (out of scope for a daily sync); worth reconciling
+the two scripts' fallback logic in a future pass if it grows.
+
 ## Backfilling or re-running periods manually
 
 **Full history (2019-01 through 2026-09) is already loaded** — all 93
