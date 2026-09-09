@@ -1013,24 +1013,71 @@ reverted by the cache-derived regeneration. Spot-checked the live
 read-back after publishing (HBDM account `1112005`, Dec 2025) against the
 Dynamics export figure and confirmed an exact match.
 
-**Known, not-yet-fixed caveat**: the separate `movement` collection (Company
-TB tab's Current Month Dr/Cr, and its "Opening + Dr - Cr = Closing"
-reconciliation banner) still uses the OLD calendar-month grouping and was
-**not** rebuilt with this same Closing/Opening-aware logic in this pass.
-For December periods (and, to a smaller extent, January) across all of
-history, the Company TB tab's Dr/Cr figures and reconciliation check may
-now disagree with the corrected `tb` closing balances, since `tb` reflects
-the fix and `movement` does not. `currencytb`/`currencymovement` (By
-Currency / Transaction Currency views) have the same gap, being built from
-the same old calendar-month query. Rebuilding `movement` (and
-`currencytb`/`currencymovement`) with the same Closing/Opening detection
-logic as `sql/monthly_movement_v2.sql` is the natural follow-up, not done
-here since the report owner's immediate ask was specifically about the
-Consolidated tab's closing balance.
-
 **No republish needed**: this is a data-layer-only fix (the `tb`
 documents themselves) -- the existing published report picks up the
 corrected data automatically on next load.
+
+## `movement` collection (Company TB Dr/Cr) had the same Closing/Opening bug -- fixed 2026-09-09, later same day
+
+**Report owner reported**: HBDM Dec 2025, account `1111001` Petty cash --
+Company TB showed Current Month Dr 13,789.55 / Cr 13,789.55 (netting to
+zero), but the Dynamics export shows Debit 265.51 / Credit 0.00. Closing
+Balance (265.52) was already correct on both sides -- only Dr/Cr disagreed.
+
+**Root cause**: exactly the caveat flagged in the finding above. The
+`movement` collection (Company TB's Current Month Dr/Cr, and by extension
+`currencytb`/`currencymovement` for By Currency and Transaction Currency)
+is built from `sql/monthly_movement.sql`, which still groups by calendar
+`accountingdate` month and so still merges each ledger's Closing-period
+entries into December's own Dr/Cr total -- the same bug `tb` had, just not
+yet ported to this collection. For HBDM Dec 2025 Petty cash, the
+Closing-period entries added extra offsetting Dr and Cr that should have
+been excluded (they reverse close to each other, per the same-year
+cancellation behavior described in the finding above) -- which is why
+Closing Balance still looked right (opening + net movement was unaffected)
+while the individual Dr and Cr figures were each inflated and wrong.
+
+**Fix**: rebuilt `movement` from the SAME already-fetched, already-
+corrected `sql/monthly_movement_v2.sql` data used for the `tb` fix above
+(the per-entity-scoped fetch cached at that point already contains
+per-period Dr/Cr with Closing-period entries shifted/dropped -- no new
+Databricks query needed). Ran the existing `scripts/build_monthly_movement.py`
+unchanged against that data (its input shape -- entity_code, mainaccountid,
+ym, debit_acc, credit_acc, debit_rep, credit_rep -- was already correct;
+only the SQL feeding it needed the v2 fix), then
+`scripts/prepare_movement_writes.py` -> 91 periods, 187 document writes
+across 18 batches, pushed live (same 2026-08/2026-09 exclusion as the `tb`
+push, for the same reason).
+
+**Validated**: HBDM Dec 2025 Petty cash now shows Debit 265.514 / Credit
+0.00 in the live `movement/2025-12` shard -- an exact match to the
+Dynamics export. Broader check across all 61,015 (entity, account, period)
+rows using the same already-published `tb` closing balances as ground
+truth (Opening = prior period's `tb` closing, 0 for P&L accounts in
+period 1; expected = Opening + Dr - Cr, reporting currency): 61,006 of
+61,015 combos reconcile exactly; the 9 exceptions are all HBBV, all in
+2026-05/2026-07/2026-08/2026-09, and all trace to HBBV's own
+already-documented reporting-currency-fallback quirk (`gjae.reportingcurrencyamount`
+is null/0 for HBBV since it has no reporting currency configured in D365,
+so `movement`'s raw reporting-side sum is 0 while `tb`'s closing balance
+correctly substitutes the accounting-currency amount) -- confirmed
+unrelated to this fix by checking the same 9 combos on the
+accounting-currency side, where they reconcile exactly.
+
+**`currencytb`/`currencymovement` (By Currency tab, Company TB's
+Transaction Currency mode) still have the analogous bug** -- they're built
+from `sql/monthly_movement_by_currency.sql`, a different query with the
+transaction-currency dimension added, which was not touched in this pass.
+Fixing it needs a `monthly_movement_by_currency_v2.sql` (same Closing/Opening
+detection and shift/drop logic, plus the `txn_ccy` grouping column) and a
+fresh Databricks fetch, since the cached v2 data doesn't carry transaction
+currency. Not done here since the report owner's ask was specifically
+about Company TB; worth a follow-up pass if By Currency shows the same
+symptom.
+
+**No republish needed**: data-layer-only fix (the `movement` documents
+themselves) -- the existing published report picks up the corrected data
+automatically on next load.
 
 ## Business rules baked into the query (confirmed with the report owner)
 
