@@ -148,6 +148,27 @@ elsewhere in the report, which suppresses a meaningless total) — each row
 above it still reconciles correctly (Opening + Dr − Cr = Closing) since a
 single row never mixes currencies, only the Grand Total does.
 
+**2026-09-09: added a Main Account filter to all four tabs.** Report-owner
+request: "add mainaccount filter as well in all the tabs... if select a
+main account then table should get filter for that account." Each tab now
+has a "Main Account" `<select>`, rebuilt on every render from whatever
+accounts are actually present in that render's own data (never a fixed
+roster) via a shared `populateAccountSelect()` helper, so a previously
+selected account that isn't present after a period/company/currency switch
+falls back to "All Accounts" instead of silently filtering to nothing.
+Consolidated and By Currency filter their row list directly by
+`mainAccountId`; Company TB filters by the account segment of its
+`account|company` (or `account|company|txnCurrency` in Transaction
+Currency mode) row keys, and the filter persists correctly across a
+currency-mode switch since both `render()` and `renderTransaction()` share
+the same `state.account` and `<select>` element. Intercompany has no
+single `mainAccountId` per row (each row nets one or two accounts per
+side), so it filters on whether the selected account is among that row's
+own `arAccountIds`/`apAccountIds` (either side, either company) rather than
+an exact match. Grand Totals recompute from the filtered row set, same as
+any other filter in this report (e.g. Company TB's per-company view) — a
+filtered total is that account's total, not an error.
+
 ## What's here
 
 - `report/consolidated-trial-balance.html` — source for the published
