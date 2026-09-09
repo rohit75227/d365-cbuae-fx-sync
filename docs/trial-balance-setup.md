@@ -231,7 +231,17 @@ amounts are a third, unconverted currency dimension.
   below).
 - `sql/monthly_movement.sql` — monthly Dr/Cr movement per (entity, account),
   no BS/PL bucketing needed (see the file's header for why) — feeds the
-  Company TB tab's Dr/Cr columns and the `movement` collection.
+  Company TB tab's Dr/Cr columns and the `movement` collection. **Still used
+  as-is for `movement`/`currencytb`/`currencymovement`** — see the
+  Closing/Opening-period finding below for the known gap this leaves on
+  December (and slightly January) periods.
+- `sql/monthly_movement_v2.sql` — supersedes `monthly_movement.sql` as the
+  source for the `tb` collection only (2026-09-09): same shape and grain,
+  but generically detects and correctly reclassifies D365's hidden
+  "Closing"/"Opening" fiscal periods (shift Balance Sheet rows to next
+  January, drop P&L rows) instead of merging them into the calendar month
+  they happen to share a date with — see the dated finding below for full
+  detail. Not yet used for `movement`/`currencytb`/`currencymovement`.
 - `sql/monthly_movement_by_currency.sql` — same as above with
   `transactioncurrencycode` added to the grain — feeds the By Currency tab
   and the `currencytb` collection. Also selects
@@ -910,6 +920,117 @@ buckets).
   documents themselves), so the existing published report picks up the
   corrected data automatically on next load — no changes to the Artifact's
   HTML/JS were required.
+
+## `tb` history was merging D365's hidden Closing/Opening fiscal periods into the wrong calendar month (real bug, fixed 2026-09-09)
+
+**Report owner reported (with a real D365-generated Trial Balance Excel
+export attached)**: HBDM's Dec 2025 closing balance was still wrong after
+the previous fix above -- provided the exact figures D365 itself reports
+for every one of HBDM's 244 accounts as of Dec 2025 P12.
+
+**Root cause, a different and more fundamental bug than the one above**:
+D365 posts two extra, hidden fiscal-calendar periods per (ledger, calendar
+year) that every query in this project had been silently merging into the
+wrong calendar month:
+
+- A **"Closing" period**, dated exactly 31-Dec (same calendar date as the
+  regular December period, but a *different* `fiscalcalendarperiod` recid).
+  For this dataset it reverses close to the entire year's net movement for
+  every account it touches, not just P&L.
+- A matching **"Opening" period**, dated 1-Jan of the following year (also
+  a distinct `fiscalcalendarperiod` from regular January), which
+  re-establishes the true carried-forward balance for Balance Sheet
+  accounts.
+
+Every existing query (`sql/monthly_movement.sql` and everything built on
+it) grouped purely by calendar `accountingdate` month, so the Closing
+period's entries landed inside December's own total instead of being
+excluded from it -- which is exactly what D365's own Trial Balance report
+does NOT do. Confirmed directly against the report owner's Dynamics
+export: D365's own period-12 report for HBDM Dec 2025 matches our numbers
+only once the Closing-period rows are removed from that period's
+cumulative.
+
+**A Closing/Opening period is detected generically**, per (ledger,
+calendar year), with no hardcoded recids: group by
+`(ledger, fiscalcalendarperiod, calendar_year)`, computing
+`MAX(accountingdate)` and `COUNT(DISTINCT accountingdate)`; filter to
+groups whose `MAX(accountingdate)` is 12-31; the group with fewer distinct
+accounting dates than the "regular" period-12 group (which spans the whole
+month) is the Closing period.
+
+**Fix**, implemented in the new `sql/monthly_movement_v2.sql` (supersedes
+`sql/monthly_movement.sql` as the source for `tb`):
+- **Balance Sheet accounts** (1,000,000-3,999,999): Closing-period rows are
+  re-bucketed into January of the *following* year -- excluded from the
+  closing year's own December cumulative (matching D365's own report) but
+  still counted from the next period onward (the entry is real money
+  movement, just administratively dated to a period D365 excludes from its
+  own year-end report).
+- **P&L accounts** (>= 4,000,000): Closing-period rows are dropped
+  entirely. The existing build already resets P&L to zero every January;
+  the Closing period's job for a P&L account is exactly that reset, so
+  including it would double it.
+
+**Two dead ends before landing on the shift-vs-drop fix**, worth recording:
+first tried simply excluding all years' Closing-period entries outright
+(not shifting them), which produced cumulative balances far too large
+(e.g. $16,196,827.30 instead of the correct $6,038,816.37 for one HBDM
+account) -- a debug query showed each year's Closing-period delta exactly
+cancels that *same* year's own non-closing delta, proving a temporary
+same-year reversal that needs to be moved forward, not permanently
+dropped. A first draft of the detection query also ranked *every* period
+active in a year by distinct-date count, misidentifying ordinary
+low-activity months as "closing" -- fixed by first filtering to only the
+periods whose latest date is 12-31 before ranking.
+
+**Validated to the cent against the report owner's own Dynamics export**:
+all 244 accounts in HBDM's Dec 2025 export match exactly -- 128/128
+Balance Sheet accounts exact, P&L accounts exact once correctly
+year-scoped.
+
+**A second, unrelated bug was caught and fixed during the rebuild**:
+refetching 61,000 rows of full history via several independent
+`ROW_NUMBER()`-paginated queries, run as separate tool calls minutes
+apart, is unsafe against ongoing GL writes -- an earlier-sorting entity's
+row count changing between calls shifts the global row numbering, silently
+duplicating/dropping rows at page boundaries with no detectable integrity
+failure (the `rn` sequence itself still looks like a complete, gap-free
+1..N run). Diagnosed via a persistent $1.4M HBFZ control-total imbalance
+traced to one missing (entity, account, period) row. Fixed by re-fetching
+each entity's full history via its own self-contained, single-entity-scoped
+query (`WHERE gje.ledger = <that entity's ledger id>`), immune to other
+entities' data changing between calls; only HBFZ needed its own internal
+pagination (17,943 rows), done as two calls scoped to HBFZ alone,
+integrity-checked for zero gaps/duplicates.
+
+**What got published**: pushed the corrected 91 periods (2019-01 through
+2026-07) to the live `tb` collection via 16 atomic batch writes, then
+refreshed `tb/index`. **2026-08 and 2026-09 were deliberately excluded**,
+same reasoning as the fix above -- both had already been freshly rebuilt
+from live Databricks queries earlier in the work session and would be
+reverted by the cache-derived regeneration. Spot-checked the live
+read-back after publishing (HBDM account `1112005`, Dec 2025) against the
+Dynamics export figure and confirmed an exact match.
+
+**Known, not-yet-fixed caveat**: the separate `movement` collection (Company
+TB tab's Current Month Dr/Cr, and its "Opening + Dr - Cr = Closing"
+reconciliation banner) still uses the OLD calendar-month grouping and was
+**not** rebuilt with this same Closing/Opening-aware logic in this pass.
+For December periods (and, to a smaller extent, January) across all of
+history, the Company TB tab's Dr/Cr figures and reconciliation check may
+now disagree with the corrected `tb` closing balances, since `tb` reflects
+the fix and `movement` does not. `currencytb`/`currencymovement` (By
+Currency / Transaction Currency views) have the same gap, being built from
+the same old calendar-month query. Rebuilding `movement` (and
+`currencytb`/`currencymovement`) with the same Closing/Opening detection
+logic as `sql/monthly_movement_v2.sql` is the natural follow-up, not done
+here since the report owner's immediate ask was specifically about the
+Consolidated tab's closing balance.
+
+**No republish needed**: this is a data-layer-only fix (the `tb`
+documents themselves) -- the existing published report picks up the
+corrected data automatically on next load.
 
 ## Business rules baked into the query (confirmed with the report owner)
 
