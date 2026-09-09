@@ -243,6 +243,30 @@
   .btn-export:disabled{ opacity:.5; cursor:default; box-shadow:none; }
   .btn-export:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
+  .btn-toggle{
+    appearance:none;
+    font:inherit;
+    font-size:12px;
+    font-weight:700;
+    font-family:"Review Condensed","Review",Arial,sans-serif;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:var(--text);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 16px;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .btn-toggle:hover{ border-color:var(--accent); }
+  .btn-toggle.active{
+    background:var(--accent);
+    color:var(--accent-ink);
+    border-color:var(--accent);
+  }
+  .btn-toggle:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
   .status-pill{
     margin-left:auto;
     display:inline-flex;
@@ -461,6 +485,16 @@
   tbody td.col-company{ font-weight:700; color:var(--accent); min-width:80px; }
   tbody td.col-acct{ text-align:left; white-space:normal; font-weight:600; min-width:170px; }
   .acct-name{ display:block; font-weight:400; color:var(--text-dim); font-size:11px; margin-top:2px; }
+  .ic-txn-breakdown{
+    margin-top:5px;
+    padding-top:5px;
+    border-top:1px dashed var(--border);
+    font-size:11px;
+    font-weight:400;
+    line-height:1.6;
+  }
+  .ic-txn-line{ white-space:nowrap; }
+  .ic-txn-ccy{ color:var(--text-dim); font-weight:700; margin-right:5px; }
   tbody tr:nth-child(even) td{ background-color:var(--surface-2); }
   tbody tr:nth-child(even) td.col-account, tbody tr:nth-child(even) td.col-name, tbody tr:nth-child(even) td.col-ccy, tbody tr:nth-child(even) td.col-company{ background-color:var(--surface-2); }
   tbody tr:hover td{ background-color:var(--total-row-bg); }
@@ -735,6 +769,7 @@
         <div class="acct-combo-panel" hidden></div>
       </div>
     </div>
+    <button type="button" class="btn-toggle" id="intercompany-details-btn">Details</button>
     <button type="button" class="btn-export" id="intercompany-export-btn" disabled>Export to Excel</button>
     <div class="status-pill">
       <span class="status-dot" id="intercompany-status-dot"></span>
@@ -755,6 +790,7 @@
       <span>Only covers relationships between the 16 tracked operating entities &mdash; balances against Kayali (a related but separate brand/legal group) or any other related party outside those 16 are not shown here</span>
       <span>Difference = Net Balance + Offset Net Balance &mdash; a nonzero difference flags an intercompany imbalance to investigate (including one side booked without the other), not a data error</span>
       <span>The Company filter always shows the selected company in the Company column (regardless of which side booked which account) and lists every counterparty it has a relationship with</span>
+      <span>Click <strong>Details</strong> to break each Net Balance / Offset Net Balance down by the transaction currency it was actually posted in (native, unconverted amounts) &mdash; independent of the Reporting/Accounting toggle above</span>
     </footer>
   </main>
 </div>
@@ -2138,7 +2174,7 @@
   };
 
   var Intercompany = (function(){
-    var state = { periodKey: null, ccy: 'reporting', company: 'ALL', account: 'ALL', entities: [] };
+    var state = { periodKey: null, ccy: 'reporting', company: 'ALL', account: 'ALL', entities: [], showTxnDetails: false };
 
     var statusDot = document.getElementById('intercompany-status-dot');
     var statusText = document.getElementById('intercompany-status-text');
@@ -2152,6 +2188,7 @@
       state.account = value;
       render();
     });
+    var detailsBtn = document.getElementById('intercompany-details-btn');
     var exportBtn = document.getElementById('intercompany-export-btn');
 
     function setStatus(text, stale){
@@ -2183,10 +2220,47 @@
       (state.entities || []).forEach(function(e, i){ entityMetaByCode[e.code] = { meta: e, order: i }; });
       var showTotals = ccy === 'reporting';
 
-      loadShardedDoc('intercompany', key).then(function(cur){
+      Promise.all([
+        loadShardedDoc('intercompany', key),
+        loadShardedDoc('currencytb', key),
+      ]).then(function(results){
+        var cur = results[0], currencyDoc = results[1];
         if (!cur){
           renderEmpty('No data for this period', 'The sync job has not produced an intercompany snapshot for <code>' + key + '</code> yet.');
           return;
+        }
+
+        // Transaction-currency breakdown lookup, shown only when "Details"
+        // is toggled on: {mainAccountId|company: [{ccy, amount}]}. Reuses
+        // the SAME `currencytb` collection Company TB's Transaction
+        // Currency mode already reads -- no separate query, since
+        // intercompany's AR/AP accounts are already a subset of
+        // currencytb's full account universe.
+        var txnByAccountCompany = {};
+        (currencyDoc ? currencyDoc.rows : []).forEach(function(r){
+          Object.keys(r.byEntity || {}).forEach(function(company){
+            var cell = r.byEntity[company];
+            if (cell.transaction === null || cell.transaction === undefined) return;
+            if (Math.round(Math.abs(cell.transaction) * 100) === 0) return;
+            var k = r.mainAccountId + '|' + company;
+            (txnByAccountCompany[k] = txnByAccountCompany[k] || []).push({ ccy: r.txnCurrency, amount: cell.transaction });
+          });
+        });
+        function txnBreakdown(accountIds, company){
+          var byCcy = {};
+          accountIds.forEach(function(id){
+            (txnByAccountCompany[id + '|' + company] || []).forEach(function(e){
+              byCcy[e.ccy] = (byCcy[e.ccy] || 0) + e.amount;
+            });
+          });
+          return Object.keys(byCcy).sort().map(function(ccy){ return { ccy: ccy, amount: byCcy[ccy] }; });
+        }
+        function txnBreakdownHtml(breakdown){
+          if (!breakdown.length) return '';
+          return '<div class="ic-txn-breakdown">' + breakdown.map(function(b){
+            var f = fmtAmount(b.amount);
+            return '<div class="ic-txn-line"><span class="ic-txn-ccy">' + escapeHtml(b.ccy) + '</span><span class="' + f.cls + '">' + f.text + '</span></div>';
+          }).join('') + '</div>';
         }
 
         // byPair["company|counterparty"] = { value, accountIds: [] }, kept
@@ -2352,16 +2426,18 @@
           var fAr = fmtAmount(r.arValue), fPay = fmtAmount(r.payableValue);
           var arAcct = acctDetail(r.arAccountIds);
           var apAcct = acctDetail(r.apAccountIds);
+          var arTxnHtml = state.showTxnDetails ? txnBreakdownHtml(txnBreakdown(r.arAccountIds, r.company)) : '';
+          var apTxnHtml = state.showTxnDetails ? txnBreakdownHtml(txnBreakdown(r.apAccountIds, r.counterparty)) : '';
 
           exportRows.push([r.company, arAcct.title || arAcct.code, r.arValue, r.counterparty, apAcct.title || apAcct.code, r.payableValue, showTotals ? difference : null]);
 
           var row = '<tr>' +
             '<td class="col-company">' + escapeHtml(r.company) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.company)) + '</span></td>' +
             acctCellHtml(arAcct) +
-            '<td class="' + fAr.cls + '">' + fAr.text + '</td>' +
+            '<td class="' + fAr.cls + '">' + fAr.text + arTxnHtml + '</td>' +
             '<td class="col-company">' + escapeHtml(r.counterparty) + '<span class="ccy-tag">' + escapeHtml(ccyLabelFor(r.counterparty)) + '</span></td>' +
             acctCellHtml(apAcct) +
-            '<td class="' + fPay.cls + '">' + fPay.text + '</td>';
+            '<td class="' + fPay.cls + '">' + fPay.text + apTxnHtml + '</td>';
           if (showTotals){
             var fd = fmtAmount(difference);
             row += '<td class="col-total ' + fd.cls + '">' + fd.text + '</td>';
@@ -2447,6 +2523,11 @@
       Array.prototype.forEach.call(ccyToggle.querySelectorAll('button'), function(b){
         b.classList.toggle('active', b === btn);
       });
+      render();
+    });
+    detailsBtn.addEventListener('click', function(){
+      state.showTxnDetails = !state.showTxnDetails;
+      detailsBtn.classList.toggle('active', state.showTxnDetails);
       render();
     });
     exportBtn.addEventListener('click', function(){

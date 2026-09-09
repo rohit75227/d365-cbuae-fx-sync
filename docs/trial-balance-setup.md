@@ -189,6 +189,35 @@ behind a "Details" toggle instead of always shown inline — a dismissed
 banner reappears on the next data reload since it reflects live data, not
 a one-time notice.
 
+**2026-09-09, later still: fixed a controls-bar alignment bug, and added a
+transaction-currency breakdown to Intercompany.** Report-owner feedback:
+"See export to excel button is not in line with the columns it is little
+off" — `.controls` used `align-items:center`, which vertically centered
+the lone Export button and status text against the *whole* row height,
+while every labeled dropdown (pushed down by its "eyebrow" label) sat
+lower — so the button visibly floated above the others' baseline. Changed
+to `align-items:flex-end` so every control shares the same bottom edge;
+also gave the status text a bordered pill/chip treatment, a soft shadow +
+hover lift to the Export button, and hover/active-state polish on
+selects, the account-search input, and the segmented toggle. Verified with
+a real headless-Chromium screenshot (Playwright, `/opt/pw-browsers/chromium`)
+before publishing, not just by reading the CSS.
+
+Separately, added a **Details** toggle button to the Intercompany tab
+(report-owner: "if I click on [a Net Balance] I can get the value in
+transaction currency and transaction currency code... add a button at top
+which says details and then the currencycode and amount should come
+underneath each value"). Clicking it fetches the SAME `currencytb`
+collection Company TB's Transaction Currency mode already reads (no new
+Databricks query) and, for each row, breaks Net Balance / Offset Net
+Balance down by the transaction currency actually posted, summed across
+that side's `arAccountIds`/`apAccountIds` (a side can span two accounts,
+e.g. a company's own AR + AP against the same counterparty) exactly the
+same way the main net figure is computed — the per-currency lines were
+verified to sum back to the exact displayed Net Balance in a live-shaped
+test. Independent of the Reporting/Accounting toggle, since transaction
+amounts are a third, unconverted currency dimension.
+
 ## What's here
 
 - `report/consolidated-trial-balance.html` — source for the published
