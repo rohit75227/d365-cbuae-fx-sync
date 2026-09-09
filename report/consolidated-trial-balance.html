@@ -1515,16 +1515,17 @@
           '<th class="col-account">Main Account</th>' +
           '<th class="col-name">Main Account Name</th>' +
           '<th class="col-company">Company</th>' +
-          '<th>Opening Balance<span class="ccy-tag">' + headerCcyLabel + '</span></th>' +
-          '<th>Current Month Dr<span class="ccy-tag">' + headerCcyLabel + '</span></th>' +
-          '<th>Current Month Cr<span class="ccy-tag">' + headerCcyLabel + '</span></th>' +
+          '<th class="col-ccy">Currency</th>' +
+          '<th>Opening Balance</th>' +
+          '<th>Current Month Dr</th>' +
+          '<th>Current Month Cr</th>' +
           (showTotals
-            ? '<th class="col-total">Closing Balance<span class="ccy-tag">' + headerCcyLabel + '</span></th>'
-            : '<th class="col-total na-note">Closing Balance<span class="ccy-tag">' + headerCcyLabel + '</span></th>') +
+            ? '<th class="col-total">Closing Balance</th>'
+            : '<th class="col-total na-note">Closing Balance</th>') +
           '</tr>';
 
         var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
-        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Opening Balance (' + headerCcyLabel + ')', 'Current Month Dr (' + headerCcyLabel + ')', 'Current Month Cr (' + headerCcyLabel + ')', 'Closing Balance (' + headerCcyLabel + ')']];
+        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Currency', 'Opening Balance', 'Current Month Dr', 'Current Month Cr', 'Closing Balance']];
         var bodyRows = keys.map(function(k){
           var parts = k.split('|'), id = parts[0], company = parts[1];
           var isPl = parseInt(id, 10) >= 4000000;
@@ -1538,13 +1539,14 @@
           var closing = closingEntry ? closingEntry.value : 0;
 
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
-          exportRows.push([id, name, company, opening, dr, cr, closing]);
+          exportRows.push([id, name, company, rowCcyLabel(company), opening, dr, cr, closing]);
 
           var fo = fmtAmount(opening), fd = fmtAmount(dr), fc = fmtAmount(cr), fcl = fmtAmount(closing);
           return '<tr>' +
             '<td class="col-account">' + escapeHtml(id) + '</td>' +
             '<td class="col-name">' + escapeHtml(name) + '</td>' +
-            '<td class="col-company">' + escapeHtml(company) + '<span class="ccy-tag">' + escapeHtml(rowCcyLabel(company)) + '</span></td>' +
+            '<td class="col-company">' + escapeHtml(company) + '</td>' +
+            '<td class="col-ccy">' + escapeHtml(rowCcyLabel(company)) + '</td>' +
             '<td class="' + fo.cls + '">' + fo.text + '</td>' +
             '<td class="' + fd.cls + '">' + fd.text + '</td>' +
             '<td class="' + fc.cls + '">' + fc.text + '</td>' +
@@ -1553,16 +1555,16 @@
         }).join('');
 
         var fo = fmtAmount(totals.opening), fd = fmtAmount(totals.dr), fc = fmtAmount(totals.cr), fcl = fmtAmount(totals.closing);
-        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-company"></td>';
+        var footRow = '<td class="col-account">Grand Total</td><td class="col-name"></td><td class="col-company"></td><td class="col-ccy">' + (showTotals ? escapeHtml(headerCcyLabel) : '') + '</td>';
         if (showTotals){
           footRow += '<td class="' + fo.cls + '">' + fo.text + '</td>' +
             '<td class="' + fd.cls + '">' + fd.text + '</td>' +
             '<td class="' + fc.cls + '">' + fc.text + '</td>' +
             '<td class="col-total ' + fcl.cls + '">' + fcl.text + '</td>';
-          exportRows.push(['Grand Total', '', '', totals.opening, totals.dr, totals.cr, totals.closing]);
+          exportRows.push(['Grand Total', '', '', '', totals.opening, totals.dr, totals.cr, totals.closing]);
         } else {
           footRow += '<td class="na-note">n/a</td><td class="na-note">n/a</td><td class="na-note">n/a</td><td class="col-total na">n/a</td>';
-          exportRows.push(['Grand Total', '', '', null, null, null, null]);
+          exportRows.push(['Grand Total', '', '', '', null, null, null, null]);
         }
 
         reportHost.innerHTML =
