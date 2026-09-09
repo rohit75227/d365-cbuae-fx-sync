@@ -150,6 +150,12 @@ def main():
     pl_series = build_series(pl_deltas, months, reset_yearly=True)
     series = {**bs_series, **pl_series}
 
+    # Earliest period each (entity, account) ever had real movement --
+    # BS and PL account ranges never collide, so combining both delta maps
+    # is safe. Used below to decide when a row should first appear, never
+    # to hide it again afterward.
+    first_ym = {key: min(ym_deltas.keys()) for key, ym_deltas in list(bs_deltas.items()) + list(pl_deltas.items())}
+
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     generated_keys = []
     for ym in months:
@@ -161,9 +167,19 @@ def main():
         for (entity, account), per_month in series.items():
             if entity not in entity_by_code:
                 continue
+            # Include the row for every period from this (entity, account)'s
+            # first-ever activity onward, even if its cumulative balance
+            # happens to net to exactly zero in some later period (e.g. a
+            # year-end intercompany settlement or closing entry) -- omitting
+            # it would make the account silently disappear from that one
+            # period and reappear later, which the tb collection must never
+            # do (unlike currencytb, which intentionally drops near-zero
+            # currency buckets). Only genuinely skip periods strictly
+            # BEFORE the account's first transaction, when it didn't exist
+            # yet.
+            if ym < first_ym[(entity, account)]:
+                continue
             acc, rep = per_month[ym]
-            if abs(acc) < 0.005 and abs(rep) < 0.005:
-                continue  # no balance yet / fully netted -- omit rather than show a hard 0
             reporting_amt = rep
             if entity_by_code[entity].get("reportingCurrencyFallback"):
                 reporting_amt = acc

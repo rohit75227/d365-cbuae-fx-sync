@@ -149,6 +149,24 @@ def main():
     pl_series, pl_names = build_series(pl_idx, pl_rows, reset_yearly=True)
     names = {**bs_names, **pl_names}
 
+    # Earliest period each (entity, account) ever had real movement -- used
+    # below to decide when a row should first appear, never to hide it
+    # again afterward (see the "no CLG exclusion" -- an account that nets
+    # to exactly zero in some later period, e.g. a year-end intercompany
+    # settlement, must still show as 0.00 that period rather than silently
+    # disappear and reappear).
+    first_ym = {}
+    for r in bs_rows:
+        key = (r[bs_idx["entity_code"]], r[bs_idx["mainaccountid"]])
+        ym = r[bs_idx["ym"]]
+        if key not in first_ym or ym < first_ym[key]:
+            first_ym[key] = ym
+    for r in pl_rows:
+        key = (r[pl_idx["entity_code"]], r[pl_idx["mainaccountid"]])
+        ym = r[pl_idx["ym"]]
+        if key not in first_ym or ym < first_ym[key]:
+            first_ym[key] = ym
+
     generated_keys = []
     for fy, period, ym in all_periods():
         accounts = {}
@@ -157,9 +175,9 @@ def main():
         for (entity, account), per_month in list(bs_series.items()) + list(pl_series.items()):
             if entity not in entity_by_code:
                 continue
+            if ym < first_ym[(entity, account)]:
+                continue  # account genuinely didn't exist yet as of this period
             cum_acc, cum_rep = per_month[ym]
-            if abs(cum_acc) < 0.005 and abs(cum_rep) < 0.005:
-                continue  # no balance yet / fully netted -- omit rather than show a hard 0
             reporting_amt = cum_rep
             if entity_by_code[entity].get("reportingCurrencyFallback"):
                 reporting_amt = cum_acc
