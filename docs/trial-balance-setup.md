@@ -461,6 +461,66 @@ check belongs in every field this sync touches, not just `tb`, since
 `intercompany` draws from the same underlying GL activity and drifts for
 the same reason.
 
+**2026-09-10, later same day: full-history refresh requested after new FY2025
+postings ("we have posted entries in 2025... make sure data is refreshed
+for 2025 as well").** Rather than re-run the single-period daily pipeline,
+re-fetched `sql/monthly_movement.sql`, `sql/monthly_movement_by_currency.sql`,
+and `sql/monthly_movement_v2.sql` fresh across the FULL history (2019-01
+through 2026-09, paginated) and rebuilt all 93 periods of `tb`, `movement`,
+`currencytb`, and `currencymovement` from scratch, plus `intercompany` (its
+existing full-rebuild-every-time design already covers this).
+
+- **Mistake caught before publishing**: the first pass built `tb` from the
+  plain `monthly_movement.sql` (the same query `movement`/`currencytb`/
+  `currencymovement` intentionally still use) instead of the
+  Closing/Opening-aware `sql/monthly_movement_v2.sql`. That reintroduced the
+  already-fixed hidden-Closing-period bug (see the 2026-09-09 finding
+  above) and showed up as an obviously-wrong **$24.7 billion** cell-level
+  diff on December 2025 alone when diffed against the currently-published
+  data — a scale no ordinary GL correction would produce. Re-fetched full
+  history with `monthly_movement_v2.sql` (61,040 rows, 5 pages) and rebuilt
+  `tb` again before touching the database. This is a reminder specific to
+  any future full-history `tb` rebuild: `monthly_movement_v2.sql`, not
+  `monthly_movement.sql`, is the correct source for `tb`.
+- **Genuine FY2025 change found**: after the correction, December 2025 (and
+  therefore every FY2026 period, since Balance Sheet accounts carry
+  forward) differed from the previously-published data by real, moderate
+  amounts — an intercompany management-fee entry between HBDM and HBDS
+  (~$10.28M, accounts `4140001`/`1122125`/`6780001`/`2112105`) and a
+  correction to HBDM's Corporate Taxes Payable (`2141001`, ~$18.68M) — 8
+  cell diffs, ~$99M total absolute, all on HBDM/HBDS. January 2019 through
+  November 2025 were byte-for-byte unchanged (spot-checked and diffed in
+  full), confirming the new postings land specifically in December 2025.
+  Pushed `tb` for FY2025 P12 through FY2026 P9 (the periods that actually
+  changed) rather than all 93, and `movement`/`currencytb`/
+  `currencymovement` for the full 2025-01 through 2026-09 window (cheap
+  enough to just push, per this doc's existing "writing every period
+  unconditionally is also correct, just pricier" guidance) plus a full
+  `intercompany` rebuild.
+- **August/September 2026 also picked up incremental drift** beyond the
+  December 2025 carry-forward, on top of the fix already applied earlier
+  the same day in the routine daily sync — ordinary continued backdating
+  drift (same recurring pattern as every prior finding above), not related
+  to the FY2025 postings specifically.
+- **Validated before and after pushing**: spot-checked FY2019 P1 and
+  FY2024 P12 (unaffected periods, both pre-Closing/Opening-fix and
+  post-fix) matched the live-published data exactly with the corrected
+  `monthly_movement_v2.sql` rebuild. Cross-checked `currencytb`/
+  `intercompany` against the corrected `tb` for September 2026 (149 and
+  362 combos respectively, only 7 small ($30K-$150K) mismatches — ordinary
+  live-data drift from the few-minutes gap between the `monthly_movement_v2`
+  fetch and the plain `monthly_movement`/`intercompany_movement` fetches,
+  the same "fetch everything in the same sitting" effect documented
+  2026-09-04, not a logic error) and validated Opening + Dr − Cr = Closing
+  for September against August's freshly-refreshed opening (362 combos, 7
+  failures, the identical 7 live-drift cells). December 2025's cross-checks
+  against `currencytb`/`intercompany` show many more differences (1,313 and
+  1 respectively) — expected, since `currencytb`/`currencymovement`/
+  `intercompany` still use the un-fixed Closing/Opening query by design
+  (documented above), so a Dec/Jan-boundary period never reconciles exactly
+  between `tb` and those three collections regardless of how fresh the data
+  is.
+
 ## Backfilling or re-running periods manually
 
 **Full history (2019-01 through 2026-09) is already loaded** — all 93
