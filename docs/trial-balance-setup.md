@@ -435,6 +435,32 @@ one entity's reporting-currency fallback, not something introduced by this
 sync. Not fixed here (out of scope for a daily sync); worth reconciling
 the two scripts' fallback logic in a future pass if it grows.
 
+**2026-09-10 daily sync: backdating drift recurred again on August (third
+consecutive day), plus the first `intercompany` backdating check since it
+was added.** FY2026 P9's sync found August's already-published `tb` stale
+by 158 of 1,729 (account, entity) combinations (>$1 each), ~$628M total
+absolute drift — same recurring pattern as 2026-09-05 and 2026-09-09, not
+a new issue. Refreshed August's and September's `tb`, `movement`,
+`currencytb`, and `currencymovement` per the procedure above; cross-checked
+`currencytb` against `tb` (2 expected mismatches per period, both the
+active HBUK/HBCB simulated Retained Earnings adjustment, exactly as
+documented). Also ran the `intercompany` backdating check for the first
+time on a routine sync (previously only spot-checked at initial rollout):
+found the current period's stored data stale too (`2112105`/HBFZ off by
+~$97.3M, `1122001`/HBFZ missing $141.5M entirely, among others) — rebuilt
+all 93 `intercompany` periods from a fresh full-history query (cheap given
+the narrow ~80-account universe, and self-corrects any backdated period
+without a separate spot-check per period) and pushed all of them rather
+than diffing each one first. Cross-checked against `tb` for both periods
+(149 combos each, zero mismatches) and validated Opening + Dr − Cr =
+Closing for September against August's freshly-refreshed opening (358
+combos, zero failures) and for August against July's opening (760 combos,
+only the same 3 pre-existing HBBV reporting-currency-fallback cells
+failing, already documented above — not new). Confirms the backdating
+check belongs in every field this sync touches, not just `tb`, since
+`intercompany` draws from the same underlying GL activity and drifts for
+the same reason.
+
 ## Backfilling or re-running periods manually
 
 **Full history (2019-01 through 2026-09) is already loaded** — all 93
