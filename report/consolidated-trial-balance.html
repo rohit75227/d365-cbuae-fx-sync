@@ -392,6 +392,55 @@
   .acct-combo-option:hover, .acct-combo-option.active{ background:var(--total-row-bg); }
   .acct-combo-option .acct-combo-name{ color:var(--text-dim); margin-left:6px; }
   .acct-combo-empty{ padding:8px 12px; font-size:12px; color:var(--text-dim); font-style:italic; }
+
+  /* Multi-select filter (Vendor Group / Customer Group): a trigger button
+     styled like a <select>, opening a panel of checkboxes. Reuses the
+     acct-combo panel geometry so both dropdowns read as one control family. */
+  .ms-combo{ position:relative; }
+  .ms-trigger{
+    appearance:none;
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    text-align:left;
+    color:var(--text);
+    background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="%23454041"/></svg>') no-repeat right 12px center;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 32px 9px 14px;
+    min-width:170px;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:border-color .15s ease;
+  }
+  .ms-trigger:hover{ border-color:var(--accent); }
+  .ms-trigger.active{ border-color:var(--accent); color:var(--accent); }
+  .ms-trigger:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .ms-panel{
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    z-index:20;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    max-height:280px;
+    overflow-y:auto;
+    min-width:240px;
+  }
+  .ms-option{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    font-size:13px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .ms-option:hover, .ms-option.active{ background:var(--total-row-bg); }
+  .ms-option input{ accent-color:var(--accent); margin:0; flex:none; }
+  .ms-option.ms-all{ font-weight:700; border-bottom:1px solid var(--border); }
   td.simulated{
     background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(237,59,134,.12) 6px, rgba(237,59,134,.12) 12px);
     border-bottom:2px dashed var(--accent) !important;
@@ -828,7 +877,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Vendor Group</span>
-      <select id="vendor-group-select" aria-label="Vendor group"></select>
+      <div class="ms-combo" id="vendor-group-ms">
+        <button type="button" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Vendor group">All Groups</button>
+        <div class="ms-panel" role="listbox" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Vendor</span>
@@ -881,7 +933,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Customer Group</span>
-      <select id="customer-group-select" aria-label="Customer group"></select>
+      <div class="ms-combo" id="customer-group-ms">
+        <button type="button" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Customer group">All Groups</button>
+        <div class="ms-panel" role="listbox" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Customer</span>
@@ -1027,6 +1082,87 @@
         currentValue = ids.indexOf(preferredValue) !== -1 ? preferredValue : 'ALL';
         input.value = label(currentValue);
         return currentValue;
+      },
+    };
+  }
+
+  // Shared multi-select filter, used by the Vendor Group and Customer Group
+  // controls: a trigger button opening a panel of checkboxes. An EMPTY
+  // selection means "all" -- the same widening fallback the single-select
+  // combos get from their 'ALL' sentinel, so a period switch that drops a
+  // group loosens the filter instead of emptying the table. `rootEl` is the
+  // wrapping <div class="ms-combo"> holding one `.ms-trigger` and one
+  // `.ms-panel`; `onChange(selectedValues)` fires on every change. Rebuilt
+  // from the values this period's rows actually contain (same "no fixed
+  // roster" reasoning as createAccountCombo above), dropping any selection
+  // whose value is no longer present.
+  function createMultiSelect(rootEl, allLabel, onChange){
+    var trigger = rootEl.querySelector('.ms-trigger');
+    var panel = rootEl.querySelector('.ms-panel');
+    var values = [];
+    var selected = {};
+
+    function selectedList(){
+      return values.filter(function(v){ return selected[v]; });
+    }
+
+    function syncLabel(){
+      var sel = selectedList();
+      trigger.textContent = !sel.length ? allLabel
+        : (sel.length === 1 ? sel[0] : sel.length + ' selected');
+      trigger.classList.toggle('active', sel.length > 0);
+    }
+
+    function renderPanel(){
+      var sel = selectedList();
+      panel.innerHTML =
+        '<div class="ms-option ms-all' + (sel.length ? '' : ' active') + '" data-all="1">' + escapeHtml(allLabel) + '</div>' +
+        values.map(function(v){
+          return '<label class="ms-option"><input type="checkbox" value="' + escapeAttr(v) + '"' +
+            (selected[v] ? ' checked' : '') + '>' + escapeHtml(v) + '</label>';
+        }).join('');
+    }
+
+    function setOpen(open){
+      panel.hidden = !open;
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) renderPanel();
+    }
+
+    trigger.addEventListener('click', function(e){
+      e.preventDefault();
+      setOpen(panel.hidden);
+    });
+    panel.addEventListener('change', function(e){
+      var cb = e.target;
+      if (!cb || cb.type !== 'checkbox') return;
+      if (cb.checked) selected[cb.value] = true; else delete selected[cb.value];
+      syncLabel();
+      onChange(selectedList());
+    });
+    panel.addEventListener('click', function(e){
+      if (!e.target.closest('.ms-all')) return;
+      selected = {};
+      renderPanel();
+      syncLabel();
+      onChange([]);
+    });
+    document.addEventListener('click', function(e){
+      if (!panel.hidden && !rootEl.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && !panel.hidden) setOpen(false);
+    });
+
+    return {
+      populate: function(newValues){
+        values = newValues.slice();
+        var kept = {};
+        values.forEach(function(v){ if (selected[v]) kept[v] = true; });
+        selected = kept;
+        syncLabel();
+        if (!panel.hidden) renderPanel();
+        return selectedList();
       },
     };
   }
@@ -2673,7 +2809,7 @@
   // own collection.
   // ========================================================================
   var Vendor = (function(){
-    var state = { periodKey: null, mode: 'balance', company: 'ALL', group: 'ALL', vendor: 'ALL' };
+    var state = { periodKey: null, mode: 'balance', company: 'ALL', groups: [], vendor: 'ALL' };
 
     var statusDot = document.getElementById('vendor-status-dot');
     var statusText = document.getElementById('vendor-status-text');
@@ -2682,7 +2818,11 @@
     var notesHost = document.getElementById('vendor-notes-host');
     var periodSelect = document.getElementById('vendor-period-select');
     var companySelect = document.getElementById('vendor-company-select');
-    var groupSelect = document.getElementById('vendor-group-select');
+    var groupMulti = createMultiSelect(
+      document.getElementById('vendor-group-ms'), 'All Groups', function(sel){
+        state.groups = sel;
+        render();
+      });
     var modeToggle = document.getElementById('vendor-mode-toggle');
     var exportBtn = document.getElementById('vendor-export-btn');
     var vendorCombo = createAccountCombo(document.getElementById('vendor-account-combo'), function(value){
@@ -2746,13 +2886,7 @@
       state.company = companyIds.indexOf(prevCompany) !== -1 ? prevCompany : 'ALL';
       companySelect.value = state.company;
 
-      var groupIds = Object.keys(groups).sort();
-      var prevGroup = state.group;
-      groupSelect.innerHTML = '<option value="ALL">All Groups</option>' + groupIds.map(function(g){
-        return '<option value="' + escapeAttr(g) + '">' + escapeHtml(g) + '</option>';
-      }).join('');
-      state.group = groupIds.indexOf(prevGroup) !== -1 ? prevGroup : 'ALL';
-      groupSelect.value = state.group;
+      state.groups = groupMulti.populate(Object.keys(groups).sort());
 
       state.vendor = vendorCombo.populate(vendors, state.vendor);
     }
@@ -2760,7 +2894,7 @@
     function applyFilters(rows){
       return rows.filter(function(r){
         if (state.company !== 'ALL' && r.legalEntity !== state.company) return false;
-        if (state.group !== 'ALL' && r.vendorGroup !== state.group) return false;
+        if (state.groups.length && state.groups.indexOf(r.vendorGroup) === -1) return false;
         if (state.vendor !== 'ALL' && r.vendorAccount !== state.vendor) return false;
         return true;
       });
@@ -2894,7 +3028,6 @@
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    groupSelect.addEventListener('change', function(){ state.group = groupSelect.value; render(); });
     periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     modeToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-mode]');
@@ -2935,7 +3068,7 @@
   // sql/customer_balance_by_currency.sql.
   // ========================================================================
   var Customer = (function(){
-    var state = { periodKey: null, mode: 'balance', company: 'ALL', group: 'ALL', customer: 'ALL' };
+    var state = { periodKey: null, mode: 'balance', company: 'ALL', groups: [], customer: 'ALL' };
 
     var statusDot = document.getElementById('customer-status-dot');
     var statusText = document.getElementById('customer-status-text');
@@ -2944,7 +3077,11 @@
     var notesHost = document.getElementById('customer-notes-host');
     var periodSelect = document.getElementById('customer-period-select');
     var companySelect = document.getElementById('customer-company-select');
-    var groupSelect = document.getElementById('customer-group-select');
+    var groupMulti = createMultiSelect(
+      document.getElementById('customer-group-ms'), 'All Groups', function(sel){
+        state.groups = sel;
+        render();
+      });
     var modeToggle = document.getElementById('customer-mode-toggle');
     var exportBtn = document.getElementById('customer-export-btn');
     var customerCombo = createAccountCombo(document.getElementById('customer-account-combo'), function(value){
@@ -3000,13 +3137,7 @@
       state.company = companyIds.indexOf(prevCompany) !== -1 ? prevCompany : 'ALL';
       companySelect.value = state.company;
 
-      var groupIds = Object.keys(groups).sort();
-      var prevGroup = state.group;
-      groupSelect.innerHTML = '<option value="ALL">All Groups</option>' + groupIds.map(function(g){
-        return '<option value="' + escapeAttr(g) + '">' + escapeHtml(g) + '</option>';
-      }).join('');
-      state.group = groupIds.indexOf(prevGroup) !== -1 ? prevGroup : 'ALL';
-      groupSelect.value = state.group;
+      state.groups = groupMulti.populate(Object.keys(groups).sort());
 
       state.customer = customerCombo.populate(customers, state.customer);
     }
@@ -3014,7 +3145,7 @@
     function applyFilters(rows){
       return rows.filter(function(r){
         if (state.company !== 'ALL' && r.legalEntity !== state.company) return false;
-        if (state.group !== 'ALL' && r.customerGroup !== state.group) return false;
+        if (state.groups.length && state.groups.indexOf(r.customerGroup) === -1) return false;
         if (state.customer !== 'ALL' && r.customerAccount !== state.customer) return false;
         return true;
       });
@@ -3148,7 +3279,6 @@
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    groupSelect.addEventListener('change', function(){ state.group = groupSelect.value; render(); });
     periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     modeToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-mode]');
