@@ -304,6 +304,37 @@ amounts are a third, unconverted currency dimension.
   `build_intercompany_periods.py`'s per-period JSON into write_db-ready
   batches for the `intercompany` collection, mirroring
   `prepare_backfill_writes.py` for `tb`.
+- `sql/vendor_balance.sql` / `sql/customer_balance.sql` — monthly Dr/Cr
+  movement per (legal entity, vendor/customer account, month), from
+  `vendtrans`/`vendtable` and `custtrans`/`custtable` joined to
+  `dirpartytable` for the party name. Feeds the Vendor Balance / Customer
+  Balance tabs. **`vendor_balance.sql` joins `vendtable` case-insensitively
+  on `dataareaid`** (`LOWER(vd.dataareaid) = vt.dataareaid`) —
+  `vendtrans.dataareaid` is always lowercase but `vendtable.dataareaid` is
+  stored mixed-case (e.g. `"HBDS"`) for a large share of vendor master
+  records, and an exact-match join silently drops every transaction for
+  those vendors (found 2026-09-11: 115 of 262 Sept-2026 vendor rows were
+  missing before this fix). `customer_balance.sql` does NOT need this fix
+  — confirmed `custtable`/`custtrans` `dataareaid` casing matches exactly
+  (0 unmatched rows either way).
+- `sql/vendor_balance_by_currency.sql` / `sql/customer_balance_by_currency.sql`
+  — same grain plus the original transaction currency (`amountcur`/
+  `currencycode`), for each tab's Transaction Currency mode.
+- `scripts/build_party_balance_periods.py` — generic `--kind
+  {vendor,customer} --grain {balance,currency}` script, same forward-sum
+  pattern as `build_intercompany_periods.py` (both vendor/customer
+  balances are pure Balance Sheet / AP-AR, cumulative since ledger
+  inception, no fiscal-year reset): one full-history query, forward-summed
+  client-side into a per-period cumulative balance, zero-balance rows
+  (`abs(balance) <= 0.01`) dropped per period.
+- `scripts/prepare_party_balance_writes.py` — shards
+  `build_party_balance_periods.py`'s per-period JSON into write_db-ready
+  batches for the `vendor`/`customer` collections, mirroring
+  `prepare_intercompany_writes.py`. Since balance and currency grains are
+  built as separate passes but write into the SAME period document
+  (`shardCount` from one, `currencyShardCount` from the other), it reads
+  back the existing period file (if present) and merges rather than
+  overwriting, so run order between the two grains doesn't matter.
 
 ## Daily refresh
 
@@ -1193,3 +1224,57 @@ from the Artifact's share menu; anyone you share it with sees the latest
 synced data live (the page subscribes to the database — no reload needed).
 Page writes are locked to admin-level sharing, so a viewer opening the
 report cannot alter the figures from their browser.
+
+## 2026-09-11: Vendor Balance / Customer Balance backfilled for all 93 periods
+
+The published report had already grown live "Vendor Balance" and
+"Customer Balance" tabs (built in a separate, concurrent session) before
+any of their SQL, build scripts, or data existed in this repo or in this
+session's history — discovered only because the report owner could see
+data for Sept 2026 but nothing for any earlier period. Reverse-engineered
+the entire data model from the live artifact's own JS (field names,
+collection/shard layout, filtering rules) since no source SQL existed
+anywhere, then wrote `sql/vendor_balance.sql`, `sql/customer_balance.sql`,
+and their `_by_currency` counterparts (documented above under "What's
+here"), plus `scripts/build_party_balance_periods.py` and
+`scripts/prepare_party_balance_writes.py`.
+
+**Two data bugs found and fixed in the process, neither caused by this
+session's own code:**
+
+1. **`vendtable`/`vendtrans` `dataareaid` case mismatch** (this session's
+   own SQL, caught before push) — see `sql/vendor_balance.sql`'s entry
+   above. Fixed by joining case-insensitively; re-fetching after the fix
+   changed Sept-2026 vendor row count from 16,640 to 27,055 (balance) and
+   17,474 to 28,280 (currency).
+2. **The other session's Sept-2026 customer snapshot used the wrong
+   cutoff date.** Manually reconstructed HBCB/C000002's balance from all
+   37 raw `custtrans` rows via running-total arithmetic: the correct
+   Sept-2026 balance is 3,349,900, but the currently-published snapshot
+   showed -2,650,100 — tracing the running total showed that figure
+   matches the balance as of roughly 2026-04-01 to 2026-04-09, not
+   September, despite being labeled as the current period. This is
+   corrected automatically by the full rebuild below (this session never
+   read or reused the other session's logic, so there was nothing to
+   patch in code — only to overwrite with a correct fetch).
+
+**Backfill**: fetched full-history (2019-01 through 2026-09) vendor and
+customer data in both grains (balance + by-currency, 4 fetches total,
+paginated), forward-summed into 93 monthly periods per collection with
+`build_party_balance_periods.py`, sharded with
+`prepare_party_balance_writes.py`, and pushed via 19 `write_db` batches
+(5 vendor-balance, 6 vendor-currency, 4 customer-balance, 4
+customer-currency — split below the ~1MB per-request `write_db` limit,
+not just the 50-write cap). All batches are idempotent `set`s, so no
+data-loss risk from the two grains' writes overlapping the same period
+document.
+
+**Repo sync**: `report/consolidated-trial-balance.html` in this repo had
+also drifted stale relative to the published artifact — it had zero
+references to "vendor" or "customer" at all, missing not just this
+backfill's data but the entire Vendor/Customer Balance tab UI/JS added by
+the other session. Diffed the full published artifact HTML against the
+local file: the local copy was a strict subset (every difference was a
+published addition, nothing local-only would have been lost), so it was
+safe to overwrite `report/consolidated-trial-balance.html` wholesale with
+the current published content.

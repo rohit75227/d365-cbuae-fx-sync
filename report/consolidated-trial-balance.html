@@ -484,6 +484,10 @@
   tbody td.col-ccy{ font-weight:700; color:var(--accent); min-width:64px; }
   tbody td.col-company{ font-weight:700; color:var(--accent); min-width:80px; }
   tbody td.col-acct{ text-align:left; white-space:normal; font-weight:600; min-width:170px; }
+  /* Generic left-align utility for text columns that don't need the
+     sticky/bold/dimmed styling col-account/col-name/col-acct carry (e.g. a
+     plain "Group" column) -- table-order-independent, no position:sticky. */
+  th.col-left, td.col-left{ text-align:left; }
   .acct-name{ display:block; font-weight:400; color:var(--text-dim); font-size:11px; margin-top:2px; }
   .ic-txn-breakdown{
     margin-top:5px;
@@ -515,11 +519,15 @@
     padding:12px 14px;
     color:var(--text);
     z-index:2;
+    text-align:right;
   }
   tfoot td.col-account, tfoot td.col-name{
     position:sticky;
     left:0;
     background:var(--total-row-bg);
+  }
+  tfoot td.col-account, tfoot td.col-name, tfoot td.col-ccy, tfoot td.col-company, tfoot td.col-acct, tfoot td.col-left{
+    text-align:left;
   }
   tfoot td.col-name{ left:96px; }
   tfoot td.col-total{ border-left:2px solid var(--total-row-border); }
@@ -599,6 +607,8 @@
     <button type="button" data-view="company" role="tab" aria-selected="false">Company TB</button>
     <button type="button" data-view="currency" role="tab" aria-selected="false">By Currency</button>
     <button type="button" data-view="intercompany" role="tab" aria-selected="false">Intercompany</button>
+    <button type="button" data-view="vendor" role="tab" aria-selected="false">Vendor Balance</button>
+    <button type="button" data-view="customer" role="tab" aria-selected="false">Customer Balance</button>
   </nav>
 </header>
 
@@ -795,6 +805,112 @@
   </main>
 </div>
 
+<!-- ============================== VENDOR BALANCE ============================== -->
+<div class="view-panel" id="panel-vendor" hidden>
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">View</span>
+      <div class="segmented" id="vendor-mode-toggle" role="group" aria-label="Vendor balance view">
+        <button type="button" data-mode="balance" class="active">Accounting &amp; Reporting</button>
+        <button type="button" data-mode="transaction">Transaction Currency</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Period</span>
+      <select id="vendor-period-select" aria-label="Fiscal year and period"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Company</span>
+      <select id="vendor-company-select" aria-label="Company"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Vendor Group</span>
+      <select id="vendor-group-select" aria-label="Vendor group"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Vendor</span>
+      <div class="acct-combo" id="vendor-account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Vendors" autocomplete="off" aria-label="Search vendor">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
+    </div>
+    <button type="button" class="btn-export" id="vendor-export-btn" disabled>Export to Excel</button>
+    <div class="status-pill">
+      <span class="status-dot" id="vendor-status-dot"></span>
+      <span id="vendor-status-text">Connecting&hellip;</span>
+    </div>
+  </div>
+  <main>
+    <div id="vendor-banner-host"></div>
+    <div id="vendor-report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="vendor-notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>Balance is cumulative from ledger inception through the selected period end (vendor balances are Balance Sheet / AP &mdash; no fiscal-year reset)</span>
+      <span>Accounting &amp; Reporting shows each vendor's balance in its company's local accounting currency and in USD reporting currency, side by side</span>
+      <span>Transaction Currency shows one row per (vendor, original posting currency) &mdash; a vendor invoiced in more than one currency has more than one row; amounts are not converted and are not meant to be summed across currencies</span>
+      <span>Company / Vendor Group / Vendor filters narrow the table without re-querying &mdash; only vendors with a nonzero balance that period are listed</span>
+    </footer>
+  </main>
+</div>
+
+<!-- ============================== CUSTOMER BALANCE ============================== -->
+<div class="view-panel" id="panel-customer" hidden>
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">View</span>
+      <div class="segmented" id="customer-mode-toggle" role="group" aria-label="Customer balance view">
+        <button type="button" data-mode="balance" class="active">Accounting &amp; Reporting</button>
+        <button type="button" data-mode="transaction">Transaction Currency</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Period</span>
+      <select id="customer-period-select" aria-label="Fiscal year and period"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Company</span>
+      <select id="customer-company-select" aria-label="Company"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Customer Group</span>
+      <select id="customer-group-select" aria-label="Customer group"></select>
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">Customer</span>
+      <div class="acct-combo" id="customer-account-combo">
+        <input type="text" class="acct-combo-input" placeholder="All Customers" autocomplete="off" aria-label="Search customer">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
+    </div>
+    <button type="button" class="btn-export" id="customer-export-btn" disabled>Export to Excel</button>
+    <div class="status-pill">
+      <span class="status-dot" id="customer-status-dot"></span>
+      <span id="customer-status-text">Connecting&hellip;</span>
+    </div>
+  </div>
+  <main>
+    <div id="customer-banner-host"></div>
+    <div id="customer-report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="customer-notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>Balance is cumulative from ledger inception through the selected period end (customer balances are Balance Sheet / AR &mdash; no fiscal-year reset)</span>
+      <span>Accounting &amp; Reporting shows each customer's balance in its company's local accounting currency and in USD reporting currency, side by side</span>
+      <span>Transaction Currency shows one row per (customer, original posting currency) &mdash; a customer invoiced in more than one currency has more than one row; amounts are not converted and are not meant to be summed across currencies</span>
+      <span>Company / Customer Group / Customer filters narrow the table without re-querying &mdash; only customers with a nonzero balance that period are listed</span>
+    </footer>
+  </main>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
@@ -966,6 +1082,8 @@
     company: document.getElementById('panel-company'),
     currency: document.getElementById('panel-currency'),
     intercompany: document.getElementById('panel-intercompany'),
+    vendor: document.getElementById('panel-vendor'),
+    customer: document.getElementById('panel-customer'),
   };
   var initedViews = {};
   var pendingInits = []; // views requested before `index` was ready
@@ -980,6 +1098,8 @@
     if (view === 'company') Company.init();
     if (view === 'currency') Currency.init();
     if (view === 'intercompany') Intercompany.init();
+    if (view === 'vendor') Vendor.init();
+    if (view === 'customer') Customer.init();
   }
 
   function flushPendingInits(){
@@ -2536,6 +2656,529 @@
   })();
 
   // ========================================================================
+  // VENDOR BALANCE view -- one row per (Company, Vendor Account), cumulative
+  // since inception through the selected period end. Two independent shard
+  // sets in the "vendor" collection: vendor/<key>/shards (accounting +
+  // reporting currency, one row per vendor) and vendor/<key>/currency-shards
+  // (one row per vendor + original transaction currency) -- see
+  // sql/vendor_balance.sql and sql/vendor_balance_by_currency.sql. The
+  // period dropdown reuses the SAME shared `index` (from tb/index) as every
+  // other tab so the period list stays one consistent roster across the
+  // whole report, even though "vendor" is only backfilled for the periods
+  // someone has actually synced -- render() shows "not yet synced" rather
+  // than an error for any other period, same as Intercompany does for its
+  // own collection.
+  // ========================================================================
+  var Vendor = (function(){
+    var state = { periodKey: null, mode: 'balance', company: 'ALL', group: 'ALL', vendor: 'ALL' };
+
+    var statusDot = document.getElementById('vendor-status-dot');
+    var statusText = document.getElementById('vendor-status-text');
+    var reportHost = document.getElementById('vendor-report-host');
+    var bannerHost = document.getElementById('vendor-banner-host');
+    var notesHost = document.getElementById('vendor-notes-host');
+    var periodSelect = document.getElementById('vendor-period-select');
+    var companySelect = document.getElementById('vendor-company-select');
+    var groupSelect = document.getElementById('vendor-group-select');
+    var modeToggle = document.getElementById('vendor-mode-toggle');
+    var exportBtn = document.getElementById('vendor-export-btn');
+    var vendorCombo = createAccountCombo(document.getElementById('vendor-account-combo'), function(value){
+      state.vendor = value;
+      render();
+    });
+
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      bannerHost.innerHTML = '';
+      reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
+    }
+
+    function periodLabelFromKey(key){
+      var found = (index || []).filter(function(p){ return p.key === key; })[0];
+      return found ? periodLabel(found) : key;
+    }
+
+    // Same shape as the shared loadShardedDoc(), but for the second shard
+    // set (vendor/<key>/currency-shards, counted by currencyShardCount) --
+    // not folded into loadShardedDoc() itself since every other collection
+    // in this report only ever has one shard set per period.
+    function loadCurrencyShards(key){
+      return docOnce(db.doc('vendor/' + key)).then(function(snap){
+        if (!snap.exists) return null;
+        var doc = snap.data();
+        var shardCount = doc.currencyShardCount || 0;
+        var promises = [];
+        for (var i = 0; i < shardCount; i++) promises.push(docOnce(db.doc('vendor/' + key + '/currency-shards/' + i)));
+        return Promise.all(promises).then(function(snaps){
+          var rows = [];
+          snaps.forEach(function(s){ if (s.exists && s.data().rows) rows = rows.concat(s.data().rows); });
+          return { doc: doc, rows: rows };
+        });
+      });
+    }
+
+    // Filter dropdowns are rebuilt from whatever this period's own rows
+    // contain (same "no fixed roster" precedent as createAccountCombo, see
+    // its comment above), not the full 16-entity list -- a company/group
+    // with zero vendor activity that period simply isn't offered.
+    function populateFilters(rows){
+      var companies = {}, groups = {}, vendors = {};
+      rows.forEach(function(r){
+        companies[r.legalEntity] = true;
+        if (r.vendorGroup) groups[r.vendorGroup] = true;
+        vendors[r.vendorAccount] = r.vendorName || '';
+      });
+      var companyIds = Object.keys(companies).sort();
+      var prevCompany = state.company;
+      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + companyIds.map(function(c){
+        return '<option value="' + c + '">' + c + '</option>';
+      }).join('');
+      state.company = companyIds.indexOf(prevCompany) !== -1 ? prevCompany : 'ALL';
+      companySelect.value = state.company;
+
+      var groupIds = Object.keys(groups).sort();
+      var prevGroup = state.group;
+      groupSelect.innerHTML = '<option value="ALL">All Groups</option>' + groupIds.map(function(g){
+        return '<option value="' + escapeAttr(g) + '">' + escapeHtml(g) + '</option>';
+      }).join('');
+      state.group = groupIds.indexOf(prevGroup) !== -1 ? prevGroup : 'ALL';
+      groupSelect.value = state.group;
+
+      state.vendor = vendorCombo.populate(vendors, state.vendor);
+    }
+
+    function applyFilters(rows){
+      return rows.filter(function(r){
+        if (state.company !== 'ALL' && r.legalEntity !== state.company) return false;
+        if (state.group !== 'ALL' && r.vendorGroup !== state.group) return false;
+        if (state.vendor !== 'ALL' && r.vendorAccount !== state.vendor) return false;
+        return true;
+      });
+    }
+
+    function renderBalanceTable(rows, key){
+      var thead = '<tr>' +
+        '<th class="col-company">Company</th>' +
+        '<th class="col-left">Vendor Account</th>' +
+        '<th class="col-left">Vendor Name</th>' +
+        '<th class="col-left">Vendor Group</th>' +
+        '<th>Balance (Accounting)<span class="ccy-tag">local</span></th>' +
+        '<th>Balance (Reporting)<span class="ccy-tag">USD</span></th>' +
+        '</tr>';
+      var exportRows = [['Company', 'Vendor Account', 'Vendor Name', 'Vendor Group', 'Balance (Accounting)', 'Balance (Reporting, USD)']];
+      var totals = { accounting: 0, reporting: 0 };
+      var bodyRows = rows.map(function(r){
+        totals.accounting += r.accounting;
+        totals.reporting += r.reporting;
+        var fa = fmtAmount(r.accounting), fr = fmtAmount(r.reporting);
+        exportRows.push([r.legalEntity, r.vendorAccount, r.vendorName || '', r.vendorGroup || '', r.accounting, r.reporting]);
+        return '<tr>' +
+          '<td class="col-company">' + escapeHtml(r.legalEntity) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.vendorAccount) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.vendorName || '') + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.vendorGroup || '') + '</td>' +
+          '<td class="' + fa.cls + '">' + fa.text + '</td>' +
+          '<td class="' + fr.cls + '">' + fr.text + '</td>' +
+          '</tr>';
+      }).join('');
+      var fat = fmtAmount(totals.accounting), frt = fmtAmount(totals.reporting);
+      var footRow = '<td class="col-company">Grand Total</td><td class="col-left"></td><td class="col-left"></td><td class="col-left"></td>' +
+        '<td class="' + fat.cls + '">' + fat.text + '</td><td class="' + frt.cls + '">' + frt.text + '</td>';
+      exportRows.push(['Grand Total', '', '', '', totals.accounting, totals.reporting]);
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+        '</table></div></div>';
+
+      var banners = [];
+      if (state.company === 'ALL'){
+        banners.push({
+          title: 'Multiple companies shown',
+          summary: 'Balance (Accounting) sums each vendor’s own local currency across companies — not a single meaningful figure when their accounting currencies differ.',
+          detail: 'Balance (Reporting) is always USD and safe to total regardless of company. Filter to one Company for a meaningful Accounting-currency total.',
+        });
+      }
+      renderBanners(bannerHost, banners);
+
+      state.lastExport = {
+        rows: exportRows,
+        filename: 'VendorBalance_' + (state.company === 'ALL' ? 'AllCompanies' : state.company) + '_' + key + '.xlsx',
+      };
+      exportBtn.disabled = false;
+    }
+
+    function renderTransactionTable(rows, key){
+      var thead = '<tr>' +
+        '<th class="col-company">Company</th>' +
+        '<th class="col-left">Vendor Account</th>' +
+        '<th class="col-left">Vendor Name</th>' +
+        '<th class="col-left">Vendor Group</th>' +
+        '<th class="col-left">Currency</th>' +
+        '<th>Amount<span class="ccy-tag">txn</span></th>' +
+        '</tr>';
+      var exportRows = [['Company', 'Vendor Account', 'Vendor Name', 'Vendor Group', 'Currency', 'Amount (transaction currency)']];
+      var sorted = rows.slice().sort(function(a, b){
+        return a.legalEntity.localeCompare(b.legalEntity) || a.vendorAccount.localeCompare(b.vendorAccount) || a.currency.localeCompare(b.currency);
+      });
+      var bodyRows = sorted.map(function(r){
+        var f = fmtAmount(r.amount);
+        exportRows.push([r.legalEntity, r.vendorAccount, r.vendorName || '', r.vendorGroup || '', r.currency, r.amount]);
+        return '<tr>' +
+          '<td class="col-company">' + escapeHtml(r.legalEntity) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.vendorAccount) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.vendorName || '') + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.vendorGroup || '') + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.currency || '') + '</td>' +
+          '<td class="' + f.cls + '">' + f.text + '</td>' +
+          '</tr>';
+      }).join('');
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+        '</table></div></div>';
+
+      renderBanners(bannerHost, [{
+        title: 'Original transaction currency',
+        summary: sorted.length + ' vendor/currency row' + (sorted.length === 1 ? '' : 's') + ' for ' + periodLabelFromKey(key) + ' — not converted, not meant to be summed across currencies.',
+      }]);
+
+      state.lastExport = {
+        rows: exportRows,
+        filename: 'VendorBalanceByCurrency_' + (state.company === 'ALL' ? 'AllCompanies' : state.company) + '_' + key + '.xlsx',
+      };
+      exportBtn.disabled = false;
+    }
+
+    function render(){
+      var key = state.periodKey;
+      if (!key) return;
+      setStatus('Loading vendor balance · ' + key + '…');
+
+      var loader = state.mode === 'balance' ? loadShardedDoc('vendor', key) : loadCurrencyShards(key);
+      loader.then(function(result){
+        if (!result || !result.rows.length){
+          renderEmpty('No data for this period', 'The sync job has not produced a vendor balance snapshot for <code>' + key + '</code> yet.');
+          setStatus('No data for ' + key, true);
+          return;
+        }
+        populateFilters(result.rows);
+        var filtered = applyFilters(result.rows);
+        if (!filtered.length){
+          renderEmpty('No matching vendors', 'No vendor balances match the current filters for ' + periodLabelFromKey(key) + '.');
+          setStatus('No matches', false);
+          return;
+        }
+        if (state.mode === 'balance') renderBalanceTable(filtered, key);
+        else renderTransactionTable(filtered, key);
+        notesHost.hidden = false;
+        setStatus(periodLabelFromKey(key) + ' · ' + filtered.length + ' row' + (filtered.length === 1 ? '' : 's'), false);
+      }).catch(function(err){
+        setStatus('Could not load vendor data (' + errorText(err) + ')', true);
+        renderEmpty('Could not load data', 'Failed to load vendor balance data for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period, or reopen the report.');
+      });
+    }
+
+    companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
+    groupSelect.addEventListener('change', function(){ state.group = groupSelect.value; render(); });
+    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
+    modeToggle.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-mode]');
+      if (!btn) return;
+      state.mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(modeToggle.querySelectorAll('button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'Vendor Balance', state.lastExport.rows, exportBtn);
+    });
+
+    return {
+      init: function(){
+        if (!index || !index.length){
+          renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet.');
+          setStatus('No data yet', true);
+          return;
+        }
+        if (!state.periodKey) state.periodKey = index[0].key;
+        periodSelect.innerHTML = index.map(function(p){
+          return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
+        }).join('');
+        periodSelect.value = state.periodKey;
+        render();
+      },
+    };
+  })();
+
+  // ========================================================================
+  // CUSTOMER BALANCE view -- one row per (Company, Customer Account),
+  // cumulative since inception through the selected period end. Mirrors the
+  // VENDOR BALANCE view exactly (same two-shard-set "customer" collection
+  // shape, same filter/toggle behavior) -- see sql/customer_balance.sql and
+  // sql/customer_balance_by_currency.sql.
+  // ========================================================================
+  var Customer = (function(){
+    var state = { periodKey: null, mode: 'balance', company: 'ALL', group: 'ALL', customer: 'ALL' };
+
+    var statusDot = document.getElementById('customer-status-dot');
+    var statusText = document.getElementById('customer-status-text');
+    var reportHost = document.getElementById('customer-report-host');
+    var bannerHost = document.getElementById('customer-banner-host');
+    var notesHost = document.getElementById('customer-notes-host');
+    var periodSelect = document.getElementById('customer-period-select');
+    var companySelect = document.getElementById('customer-company-select');
+    var groupSelect = document.getElementById('customer-group-select');
+    var modeToggle = document.getElementById('customer-mode-toggle');
+    var exportBtn = document.getElementById('customer-export-btn');
+    var customerCombo = createAccountCombo(document.getElementById('customer-account-combo'), function(value){
+      state.customer = value;
+      render();
+    });
+
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      bannerHost.innerHTML = '';
+      reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
+    }
+
+    function periodLabelFromKey(key){
+      var found = (index || []).filter(function(p){ return p.key === key; })[0];
+      return found ? periodLabel(found) : key;
+    }
+
+    function loadCurrencyShards(key){
+      return docOnce(db.doc('customer/' + key)).then(function(snap){
+        if (!snap.exists) return null;
+        var doc = snap.data();
+        var shardCount = doc.currencyShardCount || 0;
+        var promises = [];
+        for (var i = 0; i < shardCount; i++) promises.push(docOnce(db.doc('customer/' + key + '/currency-shards/' + i)));
+        return Promise.all(promises).then(function(snaps){
+          var rows = [];
+          snaps.forEach(function(s){ if (s.exists && s.data().rows) rows = rows.concat(s.data().rows); });
+          return { doc: doc, rows: rows };
+        });
+      });
+    }
+
+    function populateFilters(rows){
+      var companies = {}, groups = {}, customers = {};
+      rows.forEach(function(r){
+        companies[r.legalEntity] = true;
+        if (r.customerGroup) groups[r.customerGroup] = true;
+        customers[r.customerAccount] = r.customerName || '';
+      });
+      var companyIds = Object.keys(companies).sort();
+      var prevCompany = state.company;
+      companySelect.innerHTML = '<option value="ALL">All Companies</option>' + companyIds.map(function(c){
+        return '<option value="' + c + '">' + c + '</option>';
+      }).join('');
+      state.company = companyIds.indexOf(prevCompany) !== -1 ? prevCompany : 'ALL';
+      companySelect.value = state.company;
+
+      var groupIds = Object.keys(groups).sort();
+      var prevGroup = state.group;
+      groupSelect.innerHTML = '<option value="ALL">All Groups</option>' + groupIds.map(function(g){
+        return '<option value="' + escapeAttr(g) + '">' + escapeHtml(g) + '</option>';
+      }).join('');
+      state.group = groupIds.indexOf(prevGroup) !== -1 ? prevGroup : 'ALL';
+      groupSelect.value = state.group;
+
+      state.customer = customerCombo.populate(customers, state.customer);
+    }
+
+    function applyFilters(rows){
+      return rows.filter(function(r){
+        if (state.company !== 'ALL' && r.legalEntity !== state.company) return false;
+        if (state.group !== 'ALL' && r.customerGroup !== state.group) return false;
+        if (state.customer !== 'ALL' && r.customerAccount !== state.customer) return false;
+        return true;
+      });
+    }
+
+    function renderBalanceTable(rows, key){
+      var thead = '<tr>' +
+        '<th class="col-company">Company</th>' +
+        '<th class="col-left">Customer Account</th>' +
+        '<th class="col-left">Customer Name</th>' +
+        '<th class="col-left">Customer Group</th>' +
+        '<th>Balance (Accounting)<span class="ccy-tag">local</span></th>' +
+        '<th>Balance (Reporting)<span class="ccy-tag">USD</span></th>' +
+        '</tr>';
+      var exportRows = [['Company', 'Customer Account', 'Customer Name', 'Customer Group', 'Balance (Accounting)', 'Balance (Reporting, USD)']];
+      var totals = { accounting: 0, reporting: 0 };
+      var bodyRows = rows.map(function(r){
+        totals.accounting += r.accounting;
+        totals.reporting += r.reporting;
+        var fa = fmtAmount(r.accounting), fr = fmtAmount(r.reporting);
+        exportRows.push([r.legalEntity, r.customerAccount, r.customerName || '', r.customerGroup || '', r.accounting, r.reporting]);
+        return '<tr>' +
+          '<td class="col-company">' + escapeHtml(r.legalEntity) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerAccount) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerName || '') + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerGroup || '') + '</td>' +
+          '<td class="' + fa.cls + '">' + fa.text + '</td>' +
+          '<td class="' + fr.cls + '">' + fr.text + '</td>' +
+          '</tr>';
+      }).join('');
+      var fat = fmtAmount(totals.accounting), frt = fmtAmount(totals.reporting);
+      var footRow = '<td class="col-company">Grand Total</td><td class="col-left"></td><td class="col-left"></td><td class="col-left"></td>' +
+        '<td class="' + fat.cls + '">' + fat.text + '</td><td class="' + frt.cls + '">' + frt.text + '</td>';
+      exportRows.push(['Grand Total', '', '', '', totals.accounting, totals.reporting]);
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+        '</table></div></div>';
+
+      var banners = [];
+      if (state.company === 'ALL'){
+        banners.push({
+          title: 'Multiple companies shown',
+          summary: 'Balance (Accounting) sums each customer’s own local currency across companies — not a single meaningful figure when their accounting currencies differ.',
+          detail: 'Balance (Reporting) is always USD and safe to total regardless of company. Filter to one Company for a meaningful Accounting-currency total.',
+        });
+      }
+      renderBanners(bannerHost, banners);
+
+      state.lastExport = {
+        rows: exportRows,
+        filename: 'CustomerBalance_' + (state.company === 'ALL' ? 'AllCompanies' : state.company) + '_' + key + '.xlsx',
+      };
+      exportBtn.disabled = false;
+    }
+
+    function renderTransactionTable(rows, key){
+      var thead = '<tr>' +
+        '<th class="col-company">Company</th>' +
+        '<th class="col-left">Customer Account</th>' +
+        '<th class="col-left">Customer Name</th>' +
+        '<th class="col-left">Customer Group</th>' +
+        '<th class="col-left">Currency</th>' +
+        '<th>Amount<span class="ccy-tag">txn</span></th>' +
+        '</tr>';
+      var exportRows = [['Company', 'Customer Account', 'Customer Name', 'Customer Group', 'Currency', 'Amount (transaction currency)']];
+      var sorted = rows.slice().sort(function(a, b){
+        return a.legalEntity.localeCompare(b.legalEntity) || a.customerAccount.localeCompare(b.customerAccount) || a.currency.localeCompare(b.currency);
+      });
+      var bodyRows = sorted.map(function(r){
+        var f = fmtAmount(r.amount);
+        exportRows.push([r.legalEntity, r.customerAccount, r.customerName || '', r.customerGroup || '', r.currency, r.amount]);
+        return '<tr>' +
+          '<td class="col-company">' + escapeHtml(r.legalEntity) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerAccount) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerName || '') + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerGroup || '') + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.currency || '') + '</td>' +
+          '<td class="' + f.cls + '">' + f.text + '</td>' +
+          '</tr>';
+      }).join('');
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+        '</table></div></div>';
+
+      renderBanners(bannerHost, [{
+        title: 'Original transaction currency',
+        summary: sorted.length + ' customer/currency row' + (sorted.length === 1 ? '' : 's') + ' for ' + periodLabelFromKey(key) + ' — not converted, not meant to be summed across currencies.',
+      }]);
+
+      state.lastExport = {
+        rows: exportRows,
+        filename: 'CustomerBalanceByCurrency_' + (state.company === 'ALL' ? 'AllCompanies' : state.company) + '_' + key + '.xlsx',
+      };
+      exportBtn.disabled = false;
+    }
+
+    function render(){
+      var key = state.periodKey;
+      if (!key) return;
+      setStatus('Loading customer balance · ' + key + '…');
+
+      var loader = state.mode === 'balance' ? loadShardedDoc('customer', key) : loadCurrencyShards(key);
+      loader.then(function(result){
+        if (!result || !result.rows.length){
+          renderEmpty('No data for this period', 'The sync job has not produced a customer balance snapshot for <code>' + key + '</code> yet.');
+          setStatus('No data for ' + key, true);
+          return;
+        }
+        populateFilters(result.rows);
+        var filtered = applyFilters(result.rows);
+        if (!filtered.length){
+          renderEmpty('No matching customers', 'No customer balances match the current filters for ' + periodLabelFromKey(key) + '.');
+          setStatus('No matches', false);
+          return;
+        }
+        if (state.mode === 'balance') renderBalanceTable(filtered, key);
+        else renderTransactionTable(filtered, key);
+        notesHost.hidden = false;
+        setStatus(periodLabelFromKey(key) + ' · ' + filtered.length + ' row' + (filtered.length === 1 ? '' : 's'), false);
+      }).catch(function(err){
+        setStatus('Could not load customer data (' + errorText(err) + ')', true);
+        renderEmpty('Could not load data', 'Failed to load customer balance data for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period, or reopen the report.');
+      });
+    }
+
+    companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
+    groupSelect.addEventListener('change', function(){ state.group = groupSelect.value; render(); });
+    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
+    modeToggle.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-mode]');
+      if (!btn) return;
+      state.mode = btn.getAttribute('data-mode');
+      Array.prototype.forEach.call(modeToggle.querySelectorAll('button'), function(b){
+        b.classList.toggle('active', b === btn);
+      });
+      render();
+    });
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'Customer Balance', state.lastExport.rows, exportBtn);
+    });
+
+    return {
+      init: function(){
+        if (!index || !index.length){
+          renderEmpty('Waiting for first sync', 'No trial balance snapshot has been published yet.');
+          setStatus('No data yet', true);
+          return;
+        }
+        if (!state.periodKey) state.periodKey = index[0].key;
+        periodSelect.innerHTML = index.map(function(p){
+          return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
+        }).join('');
+        periodSelect.value = state.periodKey;
+        render();
+      },
+    };
+  })();
+
+  // ========================================================================
   // Shared index load
   // ========================================================================
   function loadIndex(){
@@ -2575,3 +3218,4 @@
   })();
 })();
 </script>
+
