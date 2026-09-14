@@ -470,6 +470,35 @@
   label.acct-combo-option.ms-check-option input{ accent-color:var(--accent); margin:0; flex:none; }
   .acct-combo-option.ms-all{ font-weight:700; border-bottom:1px solid var(--border); }
 
+  /* Multi-select "Main Account" panel: a Clear-selection bar pinned above
+     the scrollable option list (Excel-filter-style), so it stays reachable
+     without scrolling back to the top once several accounts are checked.
+     Only the multi-select instance gets this layout -- the single-select
+     acct-combo-panel keeps its plain overflow:auto (no modifier class). */
+  .acct-combo-panel.ms-panel-mode{ display:flex; flex-direction:column; overflow:hidden; padding:0; }
+  .ms-clear-bar{
+    flex:none;
+    display:flex;
+    justify-content:flex-end;
+    padding:6px 10px;
+    border-bottom:1px solid var(--border);
+  }
+  .ms-clear-btn{
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:var(--accent);
+    font:inherit;
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+    padding:4px 8px;
+    border-radius:6px;
+  }
+  .ms-clear-btn:hover:not(:disabled){ background:var(--total-row-bg); }
+  .ms-clear-btn:disabled{ color:var(--text-dim); cursor:default; opacity:.6; }
+  .ms-options-scroll{ overflow-y:auto; flex:1 1 auto; min-height:0; }
+
   /* Sortable amount-column headers: clicking toggles highest-to-lowest /
      lowest-to-highest for that column. */
   th.sortable{ cursor:pointer; user-select:none; }
@@ -1179,6 +1208,7 @@
   function createAccountMultiCombo(rootEl, onChange){
     var input = rootEl.querySelector('.acct-combo-input');
     var panel = rootEl.querySelector('.acct-combo-panel');
+    panel.classList.add('ms-panel-mode');
     var accountMap = {};
     var ids = [];
     var selected = {};
@@ -1194,24 +1224,36 @@
       else input.value = sel.length + ' accounts selected';
     }
 
+    // Clear-selection bar pinned above the scrollable option list (Excel's
+    // "Clear Filter" pattern) -- always visible regardless of scroll
+    // position, disabled when there's nothing to clear.
     function renderPanel(filterText){
       var q = (filterText || '').trim().toLowerCase();
       var matches = !q ? ids : ids.filter(function(id){
         return id.toLowerCase().indexOf(q) !== -1 || (accountMap[id] || '').toLowerCase().indexOf(q) !== -1;
       });
       var sel = selectedIds();
-      var html = '<div class="acct-combo-option ms-all' + (sel.length ? '' : ' active') + '" data-all="1">All Accounts</div>';
+      var html = '<div class="ms-clear-bar"><button type="button" class="ms-clear-btn"' + (sel.length ? '' : ' disabled') + '>Clear' + (sel.length ? ' (' + sel.length + ')' : '') + '</button></div>';
+      html += '<div class="ms-options-scroll">';
+      html += '<div class="acct-combo-option ms-all' + (sel.length ? '' : ' active') + '" data-all="1">All Accounts</div>';
       html += matches.length
         ? matches.map(function(id){
             return '<label class="acct-combo-option ms-check-option"><input type="checkbox" value="' + escapeAttr(id) + '"' +
               (selected[id] ? ' checked' : '') + '>' + escapeHtml(id) + '<span class="acct-combo-name">' + escapeHtml(accountMap[id] || '') + '</span></label>';
           }).join('')
         : '<div class="acct-combo-empty">No matching accounts</div>';
+      html += '</div>';
       panel.innerHTML = html;
       panel.hidden = false;
     }
 
     function close(){ panel.hidden = true; syncLabel(); }
+
+    function clearSelection(){
+      selected = {};
+      renderPanel(input.value);
+      onChange([]);
+    }
 
     input.addEventListener('focus', function(){ input.select(); renderPanel(''); });
     input.addEventListener('input', function(){ renderPanel(input.value); });
@@ -1221,14 +1263,18 @@
     input.addEventListener('blur', function(){ setTimeout(close, 150); });
     panel.addEventListener('mousedown', function(e){
       // keep focus on the input so the blur-close timer above doesn't
-      // race a checkbox toggle or the "All Accounts" reset
-      if (e.target.closest('.ms-all') || e.target.matches('input[type=checkbox]')) e.preventDefault();
+      // race a checkbox toggle, the "All Accounts" reset, or Clear
+      if (e.target.closest('.ms-all') || e.target.matches('input[type=checkbox]') || e.target.closest('.ms-clear-btn')) e.preventDefault();
     });
     panel.addEventListener('click', function(e){
+      var clearBtn = e.target.closest('.ms-clear-btn');
+      if (clearBtn){
+        if (clearBtn.disabled) return;
+        clearSelection();
+        return;
+      }
       if (!e.target.closest('.ms-all')) return;
-      selected = {};
-      renderPanel(input.value);
-      onChange([]);
+      clearSelection();
     });
     panel.addEventListener('change', function(e){
       var cb = e.target;

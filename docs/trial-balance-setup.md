@@ -29,7 +29,10 @@ columns, Company TB date range.** Report-owner requests, all client-side
 - The "Main Account" filter on Consolidated, Company TB, By Currency, and
   Intercompany is now multi-select (checkboxes in the same search-combo
   panel) instead of picking one account at a time; an empty selection
-  still means "all accounts."
+  still means "all accounts." A "Clear" button (Excel-filter-style,
+  disabled when nothing is selected) is pinned above the checkbox list so
+  it stays reachable without scrolling, added the same day per report-owner
+  follow-up request.
 - Every amount column, on all six tabs, is now sortable (click a header to
   sort highest-to-lowest, click again for lowest-to-highest).
 - Company TB's Period dropdown was replaced with Start Date / End Date
