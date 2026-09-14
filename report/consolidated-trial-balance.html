@@ -1,3 +1,4 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@900&display=swap">
 <title>Consolidated Trial Balance</title>
 <style>
   :root{
@@ -113,12 +114,14 @@
     flex-wrap:wrap;
   }
   header.masthead .logo{
-    font-size:19px;
-    font-weight:400;
-    letter-spacing:-.01em;
+    font-family:"Review Condensed","Review",Archivo,"Arial Black",Impact,Arial,sans-serif;
+    font-size:22px;
+    font-weight:900;
+    line-height:1;
+    letter-spacing:-.025em;
+    text-transform:lowercase;
     white-space:nowrap;
   }
-  header.masthead .logo b{ font-weight:800; }
   header.masthead .brand-sep{ opacity:.5; }
   header.masthead .brand-sub{
     margin:0;
@@ -220,6 +223,25 @@
   }
   select:hover{ border-color:var(--accent); }
   select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  input.date-input{
+    appearance:none;
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    color:var(--text);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px 12px;
+    cursor:pointer;
+    transition:border-color .15s ease;
+    color-scheme:light;
+  }
+  :root:not([data-theme="light"]) input.date-input{ color-scheme:dark; }
+  :root[data-theme="dark"] input.date-input{ color-scheme:dark; }
+  input.date-input:hover{ border-color:var(--accent); }
+  input.date-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 
   .btn-export{
     appearance:none;
@@ -389,6 +411,69 @@
   .acct-combo-option:hover, .acct-combo-option.active{ background:var(--total-row-bg); }
   .acct-combo-option .acct-combo-name{ color:var(--text-dim); margin-left:6px; }
   .acct-combo-empty{ padding:8px 12px; font-size:12px; color:var(--text-dim); font-style:italic; }
+
+  /* Multi-select filter (Vendor Group / Customer Group): a trigger button
+     styled like a <select>, opening a panel of checkboxes. Reuses the
+     acct-combo panel geometry so both dropdowns read as one control family. */
+  .ms-combo{ position:relative; }
+  .ms-trigger{
+    appearance:none;
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    text-align:left;
+    color:var(--text);
+    background:var(--surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M0 0l5 6 5-6z" fill="%23454041"/></svg>') no-repeat right 12px center;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 32px 9px 14px;
+    min-width:170px;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:border-color .15s ease;
+  }
+  .ms-trigger:hover{ border-color:var(--accent); }
+  .ms-trigger.active{ border-color:var(--accent); color:var(--accent); }
+  .ms-trigger:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .ms-panel{
+    position:absolute;
+    top:calc(100% + 4px);
+    left:0;
+    z-index:20;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    max-height:280px;
+    overflow-y:auto;
+    min-width:240px;
+  }
+  .ms-option{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    font-size:13px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .ms-option:hover, .ms-option.active{ background:var(--total-row-bg); }
+  .ms-option input{ accent-color:var(--accent); margin:0; flex:none; }
+  .ms-option.ms-all{ font-weight:700; border-bottom:1px solid var(--border); }
+
+  /* Checkbox-row variant of .acct-combo-option, used by the multi-select
+     "Main Account" combo (createAccountMultiCombo): same panel geometry as
+     the single-select combo, but each row is a <label> wrapping a
+     checkbox so more than one account can be picked without closing the
+     panel between clicks. */
+  label.acct-combo-option.ms-check-option{ display:flex; align-items:center; gap:8px; }
+  label.acct-combo-option.ms-check-option input{ accent-color:var(--accent); margin:0; flex:none; }
+  .acct-combo-option.ms-all{ font-weight:700; border-bottom:1px solid var(--border); }
+
+  /* Sortable amount-column headers: clicking toggles highest-to-lowest /
+     lowest-to-highest for that column. */
+  th.sortable{ cursor:pointer; user-select:none; }
+  th.sortable:hover{ filter:brightness(1.12); }
   td.simulated{
     background-image:repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(237,59,134,.12) 6px, rgba(237,59,134,.12) 12px);
     border-bottom:2px dashed var(--accent) !important;
@@ -598,7 +683,7 @@
 
 <header class="masthead">
   <div class="brand">
-    <span class="logo"><b>huda</b>beauty</span>
+    <span class="logo">hudabeauty</span>
     <span class="brand-sep">&middot;</span>
     <h1 class="brand-sub">Consolidated Trial Balance</h1>
   </div>
@@ -665,8 +750,12 @@
       <select id="company-select" aria-label="Company"></select>
     </div>
     <div class="control-group">
-      <span class="eyebrow">Period</span>
-      <select id="company-period-select" aria-label="Fiscal year and period"></select>
+      <span class="eyebrow">Start Date</span>
+      <input type="date" class="date-input" id="company-start-date" aria-label="Period start date">
+    </div>
+    <div class="control-group">
+      <span class="eyebrow">End Date</span>
+      <input type="date" class="date-input" id="company-end-date" aria-label="Period end date">
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
@@ -699,8 +788,8 @@
     </div>
     <footer class="notes" id="company-notes-host" hidden>
       <span class="wordmark">Huda Beauty</span>
-      <span>Opening Balance is the prior period&rsquo;s Closing Balance (Balance Sheet carries forward; P&amp;L resets to zero each January)</span>
-      <span>Current Month Dr / Cr is that account&rsquo;s raw debit / credit movement for the selected month only</span>
+      <span>Opening Balance is the Closing Balance as of the day before Start Date; Closing Balance is as of End Date &mdash; both snap to the containing month, since balances are only synced at month-end (Balance Sheet carries forward; P&amp;L resets to zero each January)</span>
+      <span>Current Period Dr / Cr is that account&rsquo;s raw debit / credit movement summed across every month from Start Date through End Date</span>
       <span>Movement figures do not include simulated, not-yet-posted adjustments &mdash; those only appear on the Consolidated view&rsquo;s Closing Balance</span>
     </footer>
   </main>
@@ -825,7 +914,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Vendor Group</span>
-      <select id="vendor-group-select" aria-label="Vendor group"></select>
+      <div class="ms-combo" id="vendor-group-ms">
+        <button type="button" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Vendor group">All Groups</button>
+        <div class="ms-panel" role="listbox" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Vendor</span>
@@ -878,7 +970,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Customer Group</span>
-      <select id="customer-group-select" aria-label="Customer group"></select>
+      <div class="ms-combo" id="customer-group-ms">
+        <button type="button" class="ms-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Customer group">All Groups</button>
+        <div class="ms-panel" role="listbox" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Customer</span>
@@ -947,6 +1042,51 @@
   // otherwise terminate the attribute early and corrupt the markup.
   function escapeAttr(s){
     return escapeHtml(s).replace(/"/g, '&quot;');
+  }
+
+  // Shared amount-column sort helpers. Each view keeps its own
+  // { sortKey, sortDir } on its `state` object ('desc' = highest to
+  // lowest, the default the first click on a column lands on; a second
+  // click on the same column flips to 'asc'). `sortArrow` renders the
+  // little indicator glyph next to whichever header is currently active;
+  // `applySort` does the actual sort of a plain array of row-descriptor
+  // objects (each already carrying its numeric column values as
+  // `values[key]`), leaving the array in its original (unsorted) order
+  // when no column has been picked yet.
+  function sortArrow(state, key){
+    if (state.sortKey !== key) return '';
+    return state.sortDir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  function thSort(state, key, label, extraClass){
+    return '<th class="sortable' + (extraClass ? ' ' + extraClass : '') + '" data-sort="' + escapeAttr(key) + '">' + label + sortArrow(state, key) + '</th>';
+  }
+
+  function applySort(state, rows){
+    if (!state.sortKey) return rows;
+    var dir = state.sortDir === 'asc' ? 1 : -1;
+    var key = state.sortKey;
+    return rows.slice().sort(function(a, b){
+      var va = (a.values && a.values[key]) || 0;
+      var vb = (b.values && b.values[key]) || 0;
+      return (va - vb) * dir;
+    });
+  }
+
+  // Wires up sort-by-column clicks for a table that lives in `hostEl`
+  // (delegated, since the table inside it is torn down and rebuilt on
+  // every render): clicking a `<th data-sort="...">` sets that column as
+  // the active sort (defaulting to highest-to-lowest) or, if it's already
+  // active, flips the direction, then calls `rerender()`.
+  function wireSortableHeaders(hostEl, state, rerender){
+    hostEl.addEventListener('click', function(e){
+      var th = e.target.closest('th[data-sort]');
+      if (!th) return;
+      var key = th.getAttribute('data-sort');
+      if (state.sortKey === key) state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc';
+      else { state.sortKey = key; state.sortDir = 'desc'; }
+      rerender();
+    });
   }
 
   // Shared "Main Account" search-combo filter, used by all four views: a
@@ -1028,6 +1168,185 @@
     };
   }
 
+  // Multi-select variant of createAccountCombo, used by the "Main Account"
+  // filter on the four views (Consolidated, Company TB, By Currency,
+  // Intercompany) that can each hold more than one account selection at
+  // once. Same search-to-narrow text input, but the panel rows are
+  // checkboxes so picking an account doesn't close the panel -- an EMPTY
+  // selection means "all accounts" (the same widening convention
+  // createMultiSelect uses for Vendor/Customer Group), and `onChange`
+  // fires the full array of selected account IDs on every change.
+  function createAccountMultiCombo(rootEl, onChange){
+    var input = rootEl.querySelector('.acct-combo-input');
+    var panel = rootEl.querySelector('.acct-combo-panel');
+    var accountMap = {};
+    var ids = [];
+    var selected = {};
+
+    function selectedIds(){
+      return ids.filter(function(id){ return selected[id]; });
+    }
+
+    function syncLabel(){
+      var sel = selectedIds();
+      if (!sel.length) input.value = '';
+      else if (sel.length === 1) input.value = sel[0] + (accountMap[sel[0]] ? ' – ' + accountMap[sel[0]] : '');
+      else input.value = sel.length + ' accounts selected';
+    }
+
+    function renderPanel(filterText){
+      var q = (filterText || '').trim().toLowerCase();
+      var matches = !q ? ids : ids.filter(function(id){
+        return id.toLowerCase().indexOf(q) !== -1 || (accountMap[id] || '').toLowerCase().indexOf(q) !== -1;
+      });
+      var sel = selectedIds();
+      var html = '<div class="acct-combo-option ms-all' + (sel.length ? '' : ' active') + '" data-all="1">All Accounts</div>';
+      html += matches.length
+        ? matches.map(function(id){
+            return '<label class="acct-combo-option ms-check-option"><input type="checkbox" value="' + escapeAttr(id) + '"' +
+              (selected[id] ? ' checked' : '') + '>' + escapeHtml(id) + '<span class="acct-combo-name">' + escapeHtml(accountMap[id] || '') + '</span></label>';
+          }).join('')
+        : '<div class="acct-combo-empty">No matching accounts</div>';
+      panel.innerHTML = html;
+      panel.hidden = false;
+    }
+
+    function close(){ panel.hidden = true; syncLabel(); }
+
+    input.addEventListener('focus', function(){ input.select(); renderPanel(''); });
+    input.addEventListener('input', function(){ renderPanel(input.value); });
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ close(); input.blur(); }
+    });
+    input.addEventListener('blur', function(){ setTimeout(close, 150); });
+    panel.addEventListener('mousedown', function(e){
+      // keep focus on the input so the blur-close timer above doesn't
+      // race a checkbox toggle or the "All Accounts" reset
+      if (e.target.closest('.ms-all') || e.target.matches('input[type=checkbox]')) e.preventDefault();
+    });
+    panel.addEventListener('click', function(e){
+      if (!e.target.closest('.ms-all')) return;
+      selected = {};
+      renderPanel(input.value);
+      onChange([]);
+    });
+    panel.addEventListener('change', function(e){
+      var cb = e.target;
+      if (!cb || cb.type !== 'checkbox') return;
+      if (cb.checked) selected[cb.value] = true; else delete selected[cb.value];
+      renderPanel(input.value);
+      onChange(selectedIds());
+    });
+
+    return {
+      populate: function(newAccountMap, preferredValues){
+        accountMap = newAccountMap;
+        ids = Object.keys(accountMap).sort();
+        var idSet = {};
+        ids.forEach(function(id){ idSet[id] = true; });
+        var kept = {};
+        (preferredValues || []).forEach(function(v){ if (idSet[v]) kept[v] = true; });
+        selected = kept;
+        syncLabel();
+        return selectedIds();
+      },
+    };
+  }
+
+  // Short filename/message suffix for the currently-selected account(s) --
+  // shared by the four multi-select "Main Account" views so export
+  // filenames and empty-state text stay consistent whether zero, one, or
+  // several accounts are picked.
+  function accountsFilenamePart(accounts){
+    if (!accounts.length) return '';
+    return accounts.length === 1 ? '_' + accounts[0] : '_' + accounts.length + 'accounts';
+  }
+  function accountsPhrase(accounts){
+    if (!accounts.length) return '';
+    return accounts.length === 1 ? ' for account ' + accounts[0] : ' for accounts ' + accounts.join(', ');
+  }
+
+  // Shared multi-select filter, used by the Vendor Group and Customer Group
+  // controls: a trigger button opening a panel of checkboxes. An EMPTY
+  // selection means "all" -- the same widening fallback the single-select
+  // combos get from their 'ALL' sentinel, so a period switch that drops a
+  // group loosens the filter instead of emptying the table. `rootEl` is the
+  // wrapping <div class="ms-combo"> holding one `.ms-trigger` and one
+  // `.ms-panel`; `onChange(selectedValues)` fires on every change. Rebuilt
+  // from the values this period's rows actually contain (same "no fixed
+  // roster" reasoning as createAccountCombo above), dropping any selection
+  // whose value is no longer present.
+  function createMultiSelect(rootEl, allLabel, onChange){
+    var trigger = rootEl.querySelector('.ms-trigger');
+    var panel = rootEl.querySelector('.ms-panel');
+    var values = [];
+    var selected = {};
+
+    function selectedList(){
+      return values.filter(function(v){ return selected[v]; });
+    }
+
+    function syncLabel(){
+      var sel = selectedList();
+      trigger.textContent = !sel.length ? allLabel
+        : (sel.length === 1 ? sel[0] : sel.length + ' selected');
+      trigger.classList.toggle('active', sel.length > 0);
+    }
+
+    function renderPanel(){
+      var sel = selectedList();
+      panel.innerHTML =
+        '<div class="ms-option ms-all' + (sel.length ? '' : ' active') + '" data-all="1">' + escapeHtml(allLabel) + '</div>' +
+        values.map(function(v){
+          return '<label class="ms-option"><input type="checkbox" value="' + escapeAttr(v) + '"' +
+            (selected[v] ? ' checked' : '') + '>' + escapeHtml(v) + '</label>';
+        }).join('');
+    }
+
+    function setOpen(open){
+      panel.hidden = !open;
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) renderPanel();
+    }
+
+    trigger.addEventListener('click', function(e){
+      e.preventDefault();
+      setOpen(panel.hidden);
+    });
+    panel.addEventListener('change', function(e){
+      var cb = e.target;
+      if (!cb || cb.type !== 'checkbox') return;
+      if (cb.checked) selected[cb.value] = true; else delete selected[cb.value];
+      syncLabel();
+      onChange(selectedList());
+    });
+    panel.addEventListener('click', function(e){
+      if (!e.target.closest('.ms-all')) return;
+      selected = {};
+      renderPanel();
+      syncLabel();
+      onChange([]);
+    });
+    document.addEventListener('click', function(e){
+      if (!panel.hidden && !rootEl.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && !panel.hidden) setOpen(false);
+    });
+
+    return {
+      populate: function(newValues){
+        values = newValues.slice();
+        var kept = {};
+        values.forEach(function(v){ if (selected[v]) kept[v] = true; });
+        selected = kept;
+        syncLabel();
+        if (!panel.hidden) renderPanel();
+        return selectedList();
+      },
+    };
+  }
+
   // Renders dismissible, collapsed-by-default banners into `hostEl`.
   // `banners` is an array of { cls, title, summary, detail }: `summary` is
   // always shown; `detail` (optional) stays hidden behind a "Details"
@@ -1071,6 +1390,75 @@
     m -= 1;
     if (m < 1) { m = 12; y -= 1; }
     return y + '-' + (m < 10 ? '0' + m : m);
+  }
+
+  // Date-range helpers for the Company TB tab's Start Date / End Date
+  // controls -- the underlying tb/movement collections are only synced at
+  // month granularity, so a picked date always snaps to the month it
+  // falls in (Opening = the prior month's closing, Closing = the end
+  // month's closing, Dr/Cr = every month in between summed).
+  function ymKey(dateStr){ return (dateStr || '').slice(0, 7); }
+
+  function lastDayOfMonth(y, m){
+    return new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of month m+1 == last day of month m (1-based m)
+  }
+
+  function periodKeyToDates(key){
+    var parts = key.split('-'), y = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+    var last = lastDayOfMonth(y, m);
+    return { first: key + '-01', last: key + '-' + (last < 10 ? '0' + last : last) };
+  }
+
+  // Every "YYYY-MM" key from startKey through endKey inclusive.
+  function monthRangeKeys(startKey, endKey){
+    var keys = [];
+    var sp = startKey.split('-'), y = parseInt(sp[0], 10), m = parseInt(sp[1], 10);
+    var ep = endKey.split('-'), ey = parseInt(ep[0], 10), em = parseInt(ep[1], 10);
+    var guard = 0;
+    while ((y < ey || (y === ey && m <= em)) && guard++ < 2000){
+      keys.push(y + '-' + (m < 10 ? '0' + m : m));
+      m += 1;
+      if (m > 12){ m = 1; y += 1; }
+    }
+    return keys;
+  }
+
+  function monthLabel(key){
+    var MONTHS = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var parts = key.split('-');
+    return MONTHS[parseInt(parts[1], 10)] + ' ' + parts[0];
+  }
+
+  function dateRangeLabel(startDate, endDate){
+    var s = ymKey(startDate), e = ymKey(endDate);
+    return s === e ? monthLabel(s) : (monthLabel(s) + ' – ' + monthLabel(e));
+  }
+
+  // Merges an array of per-month movement docs (one row per account+company,
+  // or account+company+currency) into a single summed-across-the-range
+  // lookup keyed the same way loadShardedDoc's caller already keys rows.
+  function sumMovementRows(movementDocs, keyOf){
+    var byKey = {};
+    movementDocs.forEach(function(doc){
+      (doc ? doc.rows : []).forEach(function(m){
+        var k = keyOf(m);
+        var existing = byKey[k];
+        if (!existing){
+          existing = byKey[k] = {
+            mainAccountId: m.mainAccountId, mainAccountName: m.mainAccountName, entity: m.entity, txnCurrency: m.txnCurrency,
+            debitReporting: 0, creditReporting: 0, debitAccounting: 0, creditAccounting: 0,
+            debitTransaction: 0, creditTransaction: 0,
+          };
+        }
+        existing.debitReporting += m.debitReporting || 0;
+        existing.creditReporting += m.creditReporting || 0;
+        existing.debitAccounting += m.debitAccounting || 0;
+        existing.creditAccounting += m.creditAccounting || 0;
+        existing.debitTransaction += m.debitTransaction || 0;
+        existing.creditTransaction += m.creditTransaction || 0;
+      });
+    });
+    return byKey;
   }
 
   // ========================================================================
@@ -1125,7 +1513,7 @@
   // CONSOLIDATED view
   // ========================================================================
   var Consolidated = (function(){
-    var state = { periodKey: null, ccy: 'reporting', account: 'ALL', unsubPeriod: null, currentPeriodDoc: null };
+    var state = { periodKey: null, ccy: 'reporting', accounts: [], unsubPeriod: null, currentPeriodDoc: null, sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('status-dot');
     var statusText = document.getElementById('status-text');
@@ -1134,11 +1522,12 @@
     var notesHost = document.getElementById('notes-host');
     var periodSelect = document.getElementById('period-select');
     var ccyToggle = document.getElementById('ccy-toggle');
-    var accountCombo = createAccountCombo(document.getElementById('account-combo'), function(value){
-      state.account = value;
+    var accountCombo = createAccountMultiCombo(document.getElementById('account-combo'), function(values){
+      state.accounts = values;
       if (state.periodKey) loadPeriod(state.periodKey);
     });
     var exportBtn = document.getElementById('export-btn');
+    wireSortableHeaders(reportHost, state, function(){ if (state.periodKey) loadPeriod(state.periodKey); });
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -1214,15 +1603,31 @@
 
       var accountMap = {};
       shardRows.forEach(function(r){ accountMap[r.mainAccountId] = r.mainAccountName; });
-      state.account = accountCombo.populate(accountMap, state.account);
-      var visibleRows = state.account === 'ALL' ? shardRows : shardRows.filter(function(r){ return r.mainAccountId === state.account; });
+      state.accounts = accountCombo.populate(accountMap, state.accounts);
+      var visibleRows = !state.accounts.length ? shardRows : shardRows.filter(function(r){ return state.accounts.indexOf(r.mainAccountId) !== -1; });
+
+      // Precompute each row's per-entity value + total BEFORE building any
+      // HTML, so an amount column can be sorted (applySort, below) without
+      // re-deriving these from the DOM.
+      var computedRows = visibleRows.map(function(acc){
+        var values = {}, rowTotal = 0;
+        entities.forEach(function(e){
+          var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
+          var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
+          values['entity:' + e.code] = raw || 0;
+          if (raw !== null) rowTotal += raw;
+        });
+        values.total = rowTotal;
+        return { acc: acc, values: values, total: rowTotal };
+      });
+      computedRows = applySort(state, computedRows);
 
       var thead = '<tr><th class="col-account">Main Account</th><th class="col-name">Main Account Name</th>';
       entities.forEach(function(e){
         var ccyLabel = ccy === 'reporting' ? 'USD' : e.accountingCurrency;
-        thead += '<th>' + e.code + '<span class="ccy-tag">' + ccyLabel + '</span></th>';
+        thead += thSort(state, 'entity:' + e.code, e.code + '<span class="ccy-tag">' + ccyLabel + '</span>');
       });
-      thead += '<th class="col-total">Total<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'mixed ccy') + '</span></th>';
+      thead += thSort(state, 'total', 'Total<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'mixed ccy') + '</span>', 'col-total');
       thead += '</tr>';
 
       var totalsByEntity = {};
@@ -1235,25 +1640,24 @@
       exportHeader.push(ccy === 'reporting' ? 'Total (USD)' : 'Total (mixed ccy)');
       var exportRows = [exportHeader];
 
-      var bodyRows = visibleRows.map(function(acc){
+      var bodyRows = computedRows.map(function(cr){
+        var acc = cr.acc;
         var row = '<tr><td class="col-account">' + escapeHtml(acc.mainAccountId) + '</td><td class="col-name">' + escapeHtml(acc.mainAccountName || '') + '</td>';
-        var rowTotal = 0;
         var exportRow = [acc.mainAccountId, acc.mainAccountName || ''];
         entities.forEach(function(e){
-          var cell = (acc.byEntity && acc.byEntity[e.code]) || null;
-          var raw = cell ? (ccy === 'reporting' ? cell.reporting : cell.accounting) : null;
+          var raw = (acc.byEntity && acc.byEntity[e.code]) ? cr.values['entity:' + e.code] : null;
           var f = fmtAmount(raw);
           var adj = simulatedMap[acc.mainAccountId + '|' + e.code];
           var cellCls = f.cls + (adj ? ' simulated' : '');
           var cellTitle = adj ? ' title="' + escapeAttr(adj.reason) + '"' : '';
           row += '<td class="' + cellCls + '"' + cellTitle + '>' + f.text + (adj ? ' †' : '') + '</td>';
           exportRow.push(raw === null ? null : raw);
-          if (raw !== null){ rowTotal += raw; totalsByEntity[e.code] += raw; }
+          if (raw !== null) totalsByEntity[e.code] += raw;
         });
-        var ft = fmtAmount(rowTotal);
+        var ft = fmtAmount(cr.total);
         row += '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>';
-        grandTotal += rowTotal;
-        exportRow.push(rowTotal);
+        grandTotal += cr.total;
+        exportRow.push(cr.total);
         exportRows.push(exportRow);
         row += '</tr>';
         return row;
@@ -1282,7 +1686,7 @@
 
       state.lastExport = {
         rows: exportRows,
-        filename: 'ConsolidatedTB_' + (state.periodKey || 'period') + '_' + ccy + (state.account !== 'ALL' ? '_' + state.account : '') + '.xlsx',
+        filename: 'ConsolidatedTB_' + (state.periodKey || 'period') + '_' + ccy + accountsFilenamePart(state.accounts) + '.xlsx',
       };
       exportBtn.disabled = false;
     }
@@ -1465,7 +1869,7 @@
   // COMPANY TB view
   // ========================================================================
   var Company = (function(){
-    var state = { company: 'ALL', periodKey: null, ccy: 'reporting', account: 'ALL', entities: [] };
+    var state = { company: 'ALL', startDate: null, endDate: null, ccy: 'reporting', accounts: [], entities: [], sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('company-status-dot');
     var statusText = document.getElementById('company-status-text');
@@ -1473,13 +1877,15 @@
     var bannerHost = document.getElementById('company-banner-host');
     var notesHost = document.getElementById('company-notes-host');
     var companySelect = document.getElementById('company-select');
-    var periodSelect = document.getElementById('company-period-select');
+    var startDateInput = document.getElementById('company-start-date');
+    var endDateInput = document.getElementById('company-end-date');
     var ccyToggle = document.getElementById('company-ccy-toggle');
-    var accountCombo = createAccountCombo(document.getElementById('company-account-combo'), function(value){
-      state.account = value;
+    var accountCombo = createAccountMultiCombo(document.getElementById('company-account-combo'), function(values){
+      state.accounts = values;
       render();
     });
     var exportBtn = document.getElementById('company-export-btn');
+    wireSortableHeaders(reportHost, state, render);
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -1495,28 +1901,32 @@
       exportBtn.disabled = true;
     }
 
-    function periodLabelFromKey(key){
-      var found = (index || []).filter(function(p){ return p.key === key; })[0];
-      return found ? periodLabel(found) : key;
-    }
-
     function render(){
       if (state.ccy === 'transaction') { renderTransaction(); return; }
-      var selectedCompany = state.company, key = state.periodKey, ccy = state.ccy;
-      if (!selectedCompany || !key) return;
+      var selectedCompany = state.company, ccy = state.ccy;
+      if (!selectedCompany || !state.startDate || !state.endDate) return;
+
+      var startKey = ymKey(state.startDate), endKey = ymKey(state.endDate);
+      if (startKey > endKey){
+        renderEmpty('Invalid date range', 'Start Date must be on or before End Date.');
+        return;
+      }
+      var openingKey = prevPeriodKey(startKey);
+      var monthKeys = monthRangeKeys(startKey, endKey);
+      var rangeLabel = dateRangeLabel(state.startDate, state.endDate);
+      var startPeriod = parseInt(startKey.split('-')[1], 10);
 
       var isAll = selectedCompany === 'ALL';
-      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + key + '…');
-      var prevKey = prevPeriodKey(key);
+      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + rangeLabel + '…');
 
       Promise.all([
-        loadShardedDoc('tb', key),
-        loadShardedDoc('tb', prevKey),
-        loadShardedDoc('movement', key),
+        loadShardedDoc('tb', endKey),
+        loadShardedDoc('tb', openingKey),
+        Promise.all(monthKeys.map(function(mk){ return loadShardedDoc('movement', mk); })),
       ]).then(function(results){
-        var cur = results[0], prev = results[1], movementDoc = results[2];
+        var cur = results[0], prev = results[1], movementDocs = results[2];
         if (!cur){
-          renderEmpty('No data for this period', 'The sync job has not produced a snapshot for <code>' + key + '</code> yet.');
+          renderEmpty('No data for this period', 'The sync job has not produced a snapshot for <code>' + endKey + '</code> yet.');
           return;
         }
 
@@ -1570,11 +1980,8 @@
             });
           });
         }
-        var movementByKey = {};
-        (movementDoc ? movementDoc.rows : []).forEach(function(m){
-          if (!includeCompany(m.entity)) return;
-          movementByKey[m.mainAccountId + '|' + m.entity] = m;
-        });
+        var movementByKey = sumMovementRows(movementDocs, function(m){ return m.mainAccountId + '|' + m.entity; });
+        Object.keys(movementByKey).forEach(function(k){ if (!includeCompany(movementByKey[k].entity)) delete movementByKey[k]; });
 
         // Union of every (account, company) with a closing balance, an
         // opening balance, or in-period movement -- a row that closes to
@@ -1593,7 +2000,7 @@
           return oa - ob;
         });
         if (!keys.length){
-          renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' balances for ' + key + '.');
+          renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' balances for ' + rangeLabel + '.');
           return;
         }
 
@@ -1604,11 +2011,11 @@
           var oe = openingByKey[k], ce = closingByKey[k], m = movementByKey[k];
           accountMap[id] = (ce && ce.name) || (oe && oe.name) || (m && m.mainAccountName) || '';
         });
-        state.account = accountCombo.populate(accountMap, state.account);
-        if (state.account !== 'ALL'){
-          keys = keys.filter(function(k){ return k.split('|')[0] === state.account; });
+        state.accounts = accountCombo.populate(accountMap, state.accounts);
+        if (state.accounts.length){
+          keys = keys.filter(function(k){ return state.accounts.indexOf(k.split('|')[0]) !== -1; });
           if (!keys.length){
-            renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' balances for account ' + state.account + ' in ' + key + '.');
+            renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' balances' + accountsPhrase(state.accounts) + ' in ' + rangeLabel + '.');
             return;
           }
         }
@@ -1618,26 +2025,33 @@
           '<th class="col-name">Main Account Name</th>' +
           '<th class="col-company">Company</th>' +
           '<th class="col-ccy">Currency</th>' +
-          '<th>Opening Balance</th>' +
-          '<th>Current Month Dr</th>' +
-          '<th>Current Month Cr</th>' +
-          '<th class="col-total">Closing Balance</th>' +
+          thSort(state, 'opening', 'Opening Balance') +
+          thSort(state, 'dr', 'Current Period Dr') +
+          thSort(state, 'cr', 'Current Period Cr') +
+          thSort(state, 'closing', 'Closing Balance', 'col-total') +
           '</tr>';
 
-        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
-        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Currency', 'Opening Balance', 'Current Month Dr', 'Current Month Cr', 'Closing Balance']];
-        var bodyRows = keys.map(function(k){
+        // Precompute each row's four amounts before building HTML so the
+        // rows can be sorted by whichever amount column is active.
+        var computedRows = keys.map(function(k){
           var parts = k.split('|'), id = parts[0], company = parts[1];
           var isPl = parseInt(id, 10) >= 4000000;
           var openingEntry = openingByKey[k];
           var closingEntry = closingByKey[k];
           var m = movementByKey[k];
           var name = (closingEntry && closingEntry.name) || (openingEntry && openingEntry.name) || (m && m.mainAccountName) || '';
-          var opening = (isPl && cur.doc.period === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
+          var opening = (isPl && startPeriod === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
           var dr = m ? (ccy === 'reporting' ? m.debitReporting : m.debitAccounting) : 0;
           var cr = m ? (ccy === 'reporting' ? m.creditReporting : m.creditAccounting) : 0;
           var closing = closingEntry ? closingEntry.value : 0;
+          return { id: id, company: company, name: name, opening: opening, dr: dr, cr: cr, closing: closing, values: { opening: opening, dr: dr, cr: cr, closing: closing } };
+        });
+        computedRows = applySort(state, computedRows);
 
+        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Currency', 'Opening Balance', 'Current Period Dr', 'Current Period Cr', 'Closing Balance']];
+        var bodyRows = computedRows.map(function(row){
+          var id = row.id, company = row.company, name = row.name, opening = row.opening, dr = row.dr, cr = row.cr, closing = row.closing;
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
           exportRows.push([id, name, company, rowCcyLabel(company), opening, dr, cr, closing]);
 
@@ -1682,21 +2096,21 @@
         var reconciles = Math.abs((totals.opening + netMovement) - totals.closing) < 1;
         var subject = isAll ? 'all companies' : selectedCompany;
         banners.push(reconciles
-          ? { cls: 'good', title: 'Reconciles', summary: 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + '.' }
+          ? { cls: 'good', title: 'Reconciles', summary: 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + rangeLabel + '.' }
           : { title: 'Note', summary: 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.', detail: 'Likely new Databricks activity landed between the balance and movement syncs. Re-sync to refresh.' });
         renderBanners(bannerHost, banners);
 
         notesHost.hidden = false;
-        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
+        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · ' + rangeLabel, false);
 
         state.lastExport = {
           rows: exportRows,
-          filename: 'CompanyTB_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_' + ccy + (state.account !== 'ALL' ? '_' + state.account : '') + '.xlsx',
+          filename: 'CompanyTB_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + startKey + '_to_' + endKey + '_' + ccy + accountsFilenamePart(state.accounts) + '.xlsx',
         };
         exportBtn.disabled = false;
       }).catch(function(err){
         setStatus('Could not load company TB (' + errorText(err) + ')', true);
-        renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
+        renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + rangeLabel + ': ' + escapeHtml(errorText(err)) + '. Try switching dates/company, or reopen the report.');
       });
     }
 
@@ -1716,21 +2130,30 @@
     // the By Currency tab's own Grand Total.
     // ======================================================================
     function renderTransaction(){
-      var selectedCompany = state.company, key = state.periodKey;
-      if (!selectedCompany || !key) return;
+      var selectedCompany = state.company;
+      if (!selectedCompany || !state.startDate || !state.endDate) return;
+
+      var startKey = ymKey(state.startDate), endKey = ymKey(state.endDate);
+      if (startKey > endKey){
+        renderEmpty('Invalid date range', 'Start Date must be on or before End Date.');
+        return;
+      }
+      var openingKey = prevPeriodKey(startKey);
+      var monthKeys = monthRangeKeys(startKey, endKey);
+      var rangeLabel = dateRangeLabel(state.startDate, state.endDate);
+      var startPeriod = parseInt(startKey.split('-')[1], 10);
 
       var isAll = selectedCompany === 'ALL';
-      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + key + ' · transaction currency…');
-      var prevKey = prevPeriodKey(key);
+      setStatus('Loading ' + (isAll ? 'all companies' : selectedCompany) + ' · ' + rangeLabel + ' · transaction currency…');
 
       Promise.all([
-        loadShardedDoc('currencytb', key),
-        loadShardedDoc('currencytb', prevKey),
-        loadShardedDoc('currencymovement', key),
+        loadShardedDoc('currencytb', endKey),
+        loadShardedDoc('currencytb', openingKey),
+        Promise.all(monthKeys.map(function(mk){ return loadShardedDoc('currencymovement', mk); })),
       ]).then(function(results){
-        var cur = results[0], prev = results[1], movementDoc = results[2];
+        var cur = results[0], prev = results[1], movementDocs = results[2];
         if (!cur){
-          renderEmpty('No data for this period', 'The sync job has not produced a transaction-currency snapshot for <code>' + key + '</code> yet.');
+          renderEmpty('No data for this period', 'The sync job has not produced a transaction-currency snapshot for <code>' + endKey + '</code> yet.');
           return;
         }
 
@@ -1765,11 +2188,8 @@
             });
           });
         }
-        var movementByKey = {};
-        (movementDoc ? movementDoc.rows : []).forEach(function(m){
-          if (!includeCompany(m.entity)) return;
-          movementByKey[m.mainAccountId + '|' + m.entity + '|' + m.txnCurrency] = m;
-        });
+        var movementByKey = sumMovementRows(movementDocs, function(m){ return m.mainAccountId + '|' + m.entity + '|' + m.txnCurrency; });
+        Object.keys(movementByKey).forEach(function(k){ if (!includeCompany(movementByKey[k].entity)) delete movementByKey[k]; });
 
         // Union of every (account, company, txnCurrency) with a closing
         // balance, an opening balance, or in-period movement -- same
@@ -1788,7 +2208,7 @@
           return pa[2] < pb[2] ? -1 : (pa[2] > pb[2] ? 1 : 0);
         });
         if (!keys.length){
-          renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' transaction-currency balances for ' + key + '.');
+          renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' transaction-currency balances for ' + rangeLabel + '.');
           return;
         }
 
@@ -1799,11 +2219,11 @@
           var oe = openingByKey[k], ce = closingByKey[k], m = movementByKey[k];
           accountMap[id] = (ce && ce.name) || (oe && oe.name) || (m && m.mainAccountName) || '';
         });
-        state.account = accountCombo.populate(accountMap, state.account);
-        if (state.account !== 'ALL'){
-          keys = keys.filter(function(k){ return k.split('|')[0] === state.account; });
+        state.accounts = accountCombo.populate(accountMap, state.accounts);
+        if (state.accounts.length){
+          keys = keys.filter(function(k){ return state.accounts.indexOf(k.split('|')[0]) !== -1; });
           if (!keys.length){
-            renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' transaction-currency balances for account ' + state.account + ' in ' + key + '.');
+            renderEmpty('No activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' transaction-currency balances' + accountsPhrase(state.accounts) + ' in ' + rangeLabel + '.');
             return;
           }
         }
@@ -1813,26 +2233,31 @@
           '<th class="col-name">Main Account Name</th>' +
           '<th class="col-company">Company</th>' +
           '<th class="col-ccy">Txn Ccy</th>' +
-          '<th>Opening Balance<span class="ccy-tag">mixed ccy</span></th>' +
-          '<th>Current Month Dr<span class="ccy-tag">mixed ccy</span></th>' +
-          '<th>Current Month Cr<span class="ccy-tag">mixed ccy</span></th>' +
-          '<th class="col-total">Closing Balance<span class="ccy-tag">mixed ccy</span></th>' +
+          thSort(state, 'opening', 'Opening Balance<span class="ccy-tag">mixed ccy</span>') +
+          thSort(state, 'dr', 'Current Period Dr<span class="ccy-tag">mixed ccy</span>') +
+          thSort(state, 'cr', 'Current Period Cr<span class="ccy-tag">mixed ccy</span>') +
+          thSort(state, 'closing', 'Closing Balance<span class="ccy-tag">mixed ccy</span>', 'col-total') +
           '</tr>';
 
-        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
-        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Txn Ccy', 'Opening Balance', 'Current Month Dr', 'Current Month Cr', 'Closing Balance']];
-        var bodyRows = keys.map(function(k){
+        var computedRows = keys.map(function(k){
           var parts = k.split('|'), id = parts[0], company = parts[1], txnCcy = parts[2];
           var isPl = parseInt(id, 10) >= 4000000;
           var openingEntry = openingByKey[k];
           var closingEntry = closingByKey[k];
           var m = movementByKey[k];
           var name = (closingEntry && closingEntry.name) || (openingEntry && openingEntry.name) || (m && m.mainAccountName) || '';
-          var opening = (isPl && cur.doc.period === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
+          var opening = (isPl && startPeriod === 1) ? 0 : (openingEntry ? openingEntry.value : 0);
           var dr = m ? m.debitTransaction : 0;
           var cr = m ? m.creditTransaction : 0;
           var closing = closingEntry ? closingEntry.value : 0;
+          return { id: id, company: company, txnCcy: txnCcy, name: name, opening: opening, dr: dr, cr: cr, closing: closing, values: { opening: opening, dr: dr, cr: cr, closing: closing } };
+        });
+        computedRows = applySort(state, computedRows);
 
+        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var exportRows = [['Main Account', 'Main Account Name', 'Company', 'Txn Ccy', 'Opening Balance', 'Current Period Dr', 'Current Period Cr', 'Closing Balance']];
+        var bodyRows = computedRows.map(function(row){
+          var id = row.id, company = row.company, txnCcy = row.txnCcy, name = row.name, opening = row.opening, dr = row.dr, cr = row.cr, closing = row.closing;
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
           exportRows.push([id, name, company, txnCcy, opening, dr, cr, closing]);
 
@@ -1871,23 +2296,23 @@
           cls: reconciles ? 'good' : '',
           title: reconciles ? 'Reconciles' : 'Note',
           summary: reconciles
-            ? 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + periodLabelFromKey(key) + ' (checked per row).'
+            ? 'Opening + Dr &minus; Cr = Closing for ' + subject + ', ' + rangeLabel + ' (checked per row).'
             : 'Opening + Dr &minus; Cr does not exactly equal Closing for this period.',
           detail: (reconciles ? '' : 'Likely new Databricks activity landed between syncs. Re-sync to refresh. ') +
             'The Grand Total row adds figures posted in different currencies together and will not be a meaningful single amount &mdash; shown anyway rather than hidden, since each row above it is correct in its own currency.',
         }]);
 
         notesHost.hidden = false;
-        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · FY' + cur.doc.fiscalYear + ' P' + cur.doc.period, false);
+        setStatus('Synced ' + new Date(cur.doc.generatedAt).toLocaleString() + ' · ' + (isAll ? 'All Companies' : selectedCompany) + ' · ' + rangeLabel, false);
 
         state.lastExport = {
           rows: exportRows,
-          filename: 'CompanyTB_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_transaction' + (state.account !== 'ALL' ? '_' + state.account : '') + '.xlsx',
+          filename: 'CompanyTB_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + startKey + '_to_' + endKey + '_transaction' + accountsFilenamePart(state.accounts) + '.xlsx',
         };
         exportBtn.disabled = false;
       }).catch(function(err){
         setStatus('Could not load transaction-currency data (' + errorText(err) + ')', true);
-        renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period/company, or reopen the report.');
+        renderEmpty('Could not load data', 'Failed to load ' + (isAll ? 'all companies' : selectedCompany) + ' for ' + rangeLabel + ': ' + escapeHtml(errorText(err)) + '. Try switching dates/company, or reopen the report.');
       });
     }
 
@@ -1900,17 +2325,25 @@
       if (!state.company) state.company = 'ALL';
       companySelect.value = state.company;
 
-      periodSelect.innerHTML = index.map(function(p){
-        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
-      }).join('');
-      if (!state.periodKey) state.periodKey = index[0].key;
-      periodSelect.value = state.periodKey;
+      // Constrain the date pickers to the range the sync actually covers
+      // (index is sorted newest-first, so index[0] is the latest period
+      // and the last entry is the earliest); default to the latest
+      // period's own month the first time this loads.
+      var latest = periodKeyToDates(index[0].key);
+      var earliest = periodKeyToDates(index[index.length - 1].key);
+      startDateInput.min = endDateInput.min = earliest.first;
+      startDateInput.max = endDateInput.max = latest.last;
+      if (!state.startDate) state.startDate = latest.first;
+      if (!state.endDate) state.endDate = latest.last;
+      startDateInput.value = state.startDate;
+      endDateInput.value = state.endDate;
 
       render();
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
+    startDateInput.addEventListener('change', function(){ if (startDateInput.value){ state.startDate = startDateInput.value; render(); } });
+    endDateInput.addEventListener('change', function(){ if (endDateInput.value){ state.endDate = endDateInput.value; render(); } });
     ccyToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-ccy]');
       if (!btn) return;
@@ -1930,9 +2363,9 @@
           setStatus('No data yet', true);
           return;
         }
-        if (!state.periodKey) state.periodKey = index[0].key;
+        var initialKey = state.endDate ? ymKey(state.endDate) : index[0].key;
         setStatus('Loading company roster…');
-        docOnce(db.doc('tb/' + state.periodKey)).then(function(snap){
+        docOnce(db.doc('tb/' + initialKey)).then(function(snap){
           populate((snap.exists && snap.data().entities) || []);
         }).catch(function(err){
           setStatus('Could not load company list (' + errorText(err) + ')', true);
@@ -1949,7 +2382,7 @@
   // it was posted in.
   // ========================================================================
   var Currency = (function(){
-    var state = { company: null, periodKey: null, ccy: 'reporting', account: 'ALL' };
+    var state = { company: null, periodKey: null, ccy: 'reporting', accounts: [], sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('currency-status-dot');
     var statusText = document.getElementById('currency-status-text');
@@ -1959,11 +2392,12 @@
     var companySelect = document.getElementById('currency-company-select');
     var periodSelect = document.getElementById('currency-period-select');
     var ccyToggle = document.getElementById('currency-ccy-toggle');
-    var accountCombo = createAccountCombo(document.getElementById('currency-account-combo'), function(value){
-      state.account = value;
+    var accountCombo = createAccountMultiCombo(document.getElementById('currency-account-combo'), function(values){
+      state.accounts = values;
       render();
     });
     var exportBtn = document.getElementById('currency-export-btn');
+    wireSortableHeaders(reportHost, state, render);
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -2064,11 +2498,11 @@
           var id = keyAccount(k);
           if (id && !accountMap[id]) accountMap[id] = keyAccountName(k);
         });
-        state.account = accountCombo.populate(accountMap, state.account);
-        if (state.account !== 'ALL'){
-          keys = keys.filter(function(k){ return keyAccount(k) === state.account; });
+        state.accounts = accountCombo.populate(accountMap, state.accounts);
+        if (state.accounts.length){
+          keys = keys.filter(function(k){ return state.accounts.indexOf(keyAccount(k)) !== -1; });
           if (!keys.length){
-            renderEmpty('No activity', company + ' has no balances for account ' + state.account + ' in ' + key + '.');
+            renderEmpty('No activity', company + ' has no balances' + accountsPhrase(state.accounts) + ' in ' + key + '.');
             return;
           }
         }
@@ -2080,15 +2514,13 @@
           '<th class="col-account">Main Account</th>' +
           '<th class="col-name with-ccy">Main Account Name</th>' +
           '<th class="col-ccy">Txn Ccy</th>' +
-          '<th>Opening Balance<span class="ccy-tag">' + ccyLabel + '</span></th>' +
-          '<th>Current Month Dr<span class="ccy-tag">' + ccyLabel + '</span></th>' +
-          '<th>Current Month Cr<span class="ccy-tag">' + ccyLabel + '</span></th>' +
-          '<th class="col-total">Closing Balance<span class="ccy-tag">' + ccyLabel + '</span></th>' +
+          thSort(state, 'opening', 'Opening Balance<span class="ccy-tag">' + ccyLabel + '</span>') +
+          thSort(state, 'dr', 'Current Month Dr<span class="ccy-tag">' + ccyLabel + '</span>') +
+          thSort(state, 'cr', 'Current Month Cr<span class="ccy-tag">' + ccyLabel + '</span>') +
+          thSort(state, 'closing', 'Closing Balance<span class="ccy-tag">' + ccyLabel + '</span>', 'col-total') +
           '</tr>';
 
-        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
-        var exportRows = [['Main Account', 'Main Account Name', 'Txn Ccy', 'Opening Balance (' + ccyLabel + ')', 'Current Month Dr (' + ccyLabel + ')', 'Current Month Cr (' + ccyLabel + ')', 'Closing Balance (' + ccyLabel + ')']];
-        var bodyRows = keys.map(function(k){
+        var computedRows = keys.map(function(k){
           var closingEntry = closingByKey[k];
           var openingEntry = openingByKey[k];
           var m = movementByKey[k];
@@ -2100,7 +2532,14 @@
           var dr = m ? (ccy === 'reporting' ? m.debitReporting : m.debitAccounting) : 0;
           var cr = m ? (ccy === 'reporting' ? m.creditReporting : m.creditAccounting) : 0;
           var closing = closingEntry ? closingEntry.value : 0;
+          return { account: account, name: name, txnCcy: txnCcy, opening: opening, dr: dr, cr: cr, closing: closing, values: { opening: opening, dr: dr, cr: cr, closing: closing } };
+        });
+        computedRows = applySort(state, computedRows);
 
+        var totals = { opening: 0, dr: 0, cr: 0, closing: 0 };
+        var exportRows = [['Main Account', 'Main Account Name', 'Txn Ccy', 'Opening Balance (' + ccyLabel + ')', 'Current Month Dr (' + ccyLabel + ')', 'Current Month Cr (' + ccyLabel + ')', 'Closing Balance (' + ccyLabel + ')']];
+        var bodyRows = computedRows.map(function(row){
+          var account = row.account, name = row.name, txnCcy = row.txnCcy, opening = row.opening, dr = row.dr, cr = row.cr, closing = row.closing;
           totals.opening += opening; totals.dr += dr; totals.cr += cr; totals.closing += closing;
           exportRows.push([account, name, txnCcy, opening, dr, cr, closing]);
 
@@ -2142,7 +2581,7 @@
 
         state.lastExport = {
           rows: exportRows,
-          filename: 'ByCurrency_' + company + '_' + key + '_' + ccy + (state.account !== 'ALL' ? '_' + state.account : '') + '.xlsx',
+          filename: 'ByCurrency_' + company + '_' + key + '_' + ccy + accountsFilenamePart(state.accounts) + '.xlsx',
         };
         exportBtn.disabled = false;
       }).catch(function(err){
@@ -2275,7 +2714,7 @@
   };
 
   var Intercompany = (function(){
-    var state = { periodKey: null, ccy: 'reporting', company: 'ALL', account: 'ALL', entities: [], showTxnDetails: false };
+    var state = { periodKey: null, ccy: 'reporting', company: 'ALL', accounts: [], entities: [], showTxnDetails: false, sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('intercompany-status-dot');
     var statusText = document.getElementById('intercompany-status-text');
@@ -2285,12 +2724,13 @@
     var companySelect = document.getElementById('intercompany-company-select');
     var periodSelect = document.getElementById('intercompany-period-select');
     var ccyToggle = document.getElementById('intercompany-ccy-toggle');
-    var accountCombo = createAccountCombo(document.getElementById('intercompany-account-combo'), function(value){
-      state.account = value;
+    var accountCombo = createAccountMultiCombo(document.getElementById('intercompany-account-combo'), function(values){
+      state.accounts = values;
       render();
     });
     var detailsBtn = document.getElementById('intercompany-details-btn');
     var exportBtn = document.getElementById('intercompany-export-btn');
+    wireSortableHeaders(reportHost, state, render);
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -2471,15 +2911,17 @@
           return entityMetaByCode[a.counterparty].order - entityMetaByCode[b.counterparty].order;
         });
 
-        state.account = accountCombo.populate(trackedAccountNameById, state.account);
-        if (state.account !== 'ALL'){
+        state.accounts = accountCombo.populate(trackedAccountNameById, state.accounts);
+        if (state.accounts.length){
           rows = rows.filter(function(r){
-            return r.arAccountIds.indexOf(state.account) !== -1 || r.apAccountIds.indexOf(state.account) !== -1;
+            return state.accounts.some(function(acc){
+              return r.arAccountIds.indexOf(acc) !== -1 || r.apAccountIds.indexOf(acc) !== -1;
+            });
           });
         }
 
         if (!rows.length){
-          renderEmpty('No intercompany activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' intercompany relationships' + (state.account !== 'ALL' ? ' for account ' + state.account : '') + ' for ' + key + '.');
+          renderEmpty('No intercompany activity', (isAll ? 'No companies have' : selectedCompany + ' has no') + ' intercompany relationships' + accountsPhrase(state.accounts) + ' for ' + key + '.');
           return;
         }
 
@@ -2512,15 +2954,18 @@
         var thead = '<tr>' +
           '<th class="col-company">Company</th>' +
           '<th class="col-acct">Account</th>' +
-          '<th>Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
+          thSort(state, 'ar', 'Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span>') +
           '<th class="col-company">Offset Company</th>' +
           '<th class="col-acct">Offset Account</th>' +
-          '<th>Offset Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span></th>' +
-          '<th class="col-total">Difference<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'mixed ccy') + '</span></th>' +
+          thSort(state, 'payable', 'Offset Net Balance<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'local') + '</span>') +
+          thSort(state, 'diff', 'Difference<span class="ccy-tag">' + (ccy === 'reporting' ? 'USD' : 'mixed ccy') + '</span>', 'col-total') +
           '</tr>';
 
         var exportHeader = ['Company', 'Account', 'Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Offset Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (ccy === 'reporting' ? ' (USD)' : ' (mixed ccy)')];
         var exportRows = [exportHeader];
+
+        rows.forEach(function(r){ r.values = { ar: r.arValue, payable: r.payableValue, diff: r.arValue + r.payableValue }; });
+        rows = applySort(state, rows);
 
         var totals = { ar: 0, payable: 0, diff: 0 };
         var bodyRows = rows.map(function(r){
@@ -2581,7 +3026,7 @@
 
         state.lastExport = {
           rows: exportRows,
-          filename: 'IntercompanyReconciliation_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_' + ccy + (state.account !== 'ALL' ? '_' + state.account : '') + '.xlsx',
+          filename: 'IntercompanyReconciliation_' + (isAll ? 'AllCompanies' : selectedCompany) + '_' + key + '_' + ccy + accountsFilenamePart(state.accounts) + '.xlsx',
         };
         exportBtn.disabled = false;
       }).catch(function(err){
@@ -2670,7 +3115,7 @@
   // own collection.
   // ========================================================================
   var Vendor = (function(){
-    var state = { periodKey: null, mode: 'balance', company: 'ALL', group: 'ALL', vendor: 'ALL' };
+    var state = { periodKey: null, mode: 'balance', company: 'ALL', groups: [], vendor: 'ALL', sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('vendor-status-dot');
     var statusText = document.getElementById('vendor-status-text');
@@ -2679,13 +3124,18 @@
     var notesHost = document.getElementById('vendor-notes-host');
     var periodSelect = document.getElementById('vendor-period-select');
     var companySelect = document.getElementById('vendor-company-select');
-    var groupSelect = document.getElementById('vendor-group-select');
+    var groupMulti = createMultiSelect(
+      document.getElementById('vendor-group-ms'), 'All Groups', function(sel){
+        state.groups = sel;
+        render();
+      });
     var modeToggle = document.getElementById('vendor-mode-toggle');
     var exportBtn = document.getElementById('vendor-export-btn');
     var vendorCombo = createAccountCombo(document.getElementById('vendor-account-combo'), function(value){
       state.vendor = value;
       render();
     });
+    wireSortableHeaders(reportHost, state, render);
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -2743,13 +3193,7 @@
       state.company = companyIds.indexOf(prevCompany) !== -1 ? prevCompany : 'ALL';
       companySelect.value = state.company;
 
-      var groupIds = Object.keys(groups).sort();
-      var prevGroup = state.group;
-      groupSelect.innerHTML = '<option value="ALL">All Groups</option>' + groupIds.map(function(g){
-        return '<option value="' + escapeAttr(g) + '">' + escapeHtml(g) + '</option>';
-      }).join('');
-      state.group = groupIds.indexOf(prevGroup) !== -1 ? prevGroup : 'ALL';
-      groupSelect.value = state.group;
+      state.groups = groupMulti.populate(Object.keys(groups).sort());
 
       state.vendor = vendorCombo.populate(vendors, state.vendor);
     }
@@ -2757,7 +3201,7 @@
     function applyFilters(rows){
       return rows.filter(function(r){
         if (state.company !== 'ALL' && r.legalEntity !== state.company) return false;
-        if (state.group !== 'ALL' && r.vendorGroup !== state.group) return false;
+        if (state.groups.length && state.groups.indexOf(r.vendorGroup) === -1) return false;
         if (state.vendor !== 'ALL' && r.vendorAccount !== state.vendor) return false;
         return true;
       });
@@ -2769,10 +3213,12 @@
         '<th class="col-left">Vendor Account</th>' +
         '<th class="col-left">Vendor Name</th>' +
         '<th class="col-left">Vendor Group</th>' +
-        '<th>Balance (Accounting)<span class="ccy-tag">local</span></th>' +
-        '<th>Balance (Reporting)<span class="ccy-tag">USD</span></th>' +
+        thSort(state, 'accounting', 'Balance (Accounting)<span class="ccy-tag">local</span>') +
+        thSort(state, 'reporting', 'Balance (Reporting)<span class="ccy-tag">USD</span>') +
         '</tr>';
       var exportRows = [['Company', 'Vendor Account', 'Vendor Name', 'Vendor Group', 'Balance (Accounting)', 'Balance (Reporting, USD)']];
+      rows.forEach(function(r){ r.values = { accounting: r.accounting, reporting: r.reporting }; });
+      rows = applySort(state, rows);
       var totals = { accounting: 0, reporting: 0 };
       var bodyRows = rows.map(function(r){
         totals.accounting += r.accounting;
@@ -2824,12 +3270,16 @@
         '<th class="col-left">Vendor Name</th>' +
         '<th class="col-left">Vendor Group</th>' +
         '<th class="col-left">Currency</th>' +
-        '<th>Amount<span class="ccy-tag">txn</span></th>' +
+        thSort(state, 'amount', 'Amount<span class="ccy-tag">txn</span>') +
         '</tr>';
       var exportRows = [['Company', 'Vendor Account', 'Vendor Name', 'Vendor Group', 'Currency', 'Amount (transaction currency)']];
       var sorted = rows.slice().sort(function(a, b){
         return a.legalEntity.localeCompare(b.legalEntity) || a.vendorAccount.localeCompare(b.vendorAccount) || a.currency.localeCompare(b.currency);
       });
+      if (state.sortKey === 'amount'){
+        sorted.forEach(function(r){ r.values = { amount: r.amount }; });
+        sorted = applySort(state, sorted);
+      }
       var bodyRows = sorted.map(function(r){
         var f = fmtAmount(r.amount);
         exportRows.push([r.legalEntity, r.vendorAccount, r.vendorName || '', r.vendorGroup || '', r.currency, r.amount]);
@@ -2891,12 +3341,12 @@
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    groupSelect.addEventListener('change', function(){ state.group = groupSelect.value; render(); });
     periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     modeToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-mode]');
       if (!btn) return;
       state.mode = btn.getAttribute('data-mode');
+      state.sortKey = null; // the two modes have different amount columns
       Array.prototype.forEach.call(modeToggle.querySelectorAll('button'), function(b){
         b.classList.toggle('active', b === btn);
       });
@@ -2932,7 +3382,7 @@
   // sql/customer_balance_by_currency.sql.
   // ========================================================================
   var Customer = (function(){
-    var state = { periodKey: null, mode: 'balance', company: 'ALL', group: 'ALL', customer: 'ALL' };
+    var state = { periodKey: null, mode: 'balance', company: 'ALL', groups: [], customer: 'ALL', sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('customer-status-dot');
     var statusText = document.getElementById('customer-status-text');
@@ -2941,13 +3391,18 @@
     var notesHost = document.getElementById('customer-notes-host');
     var periodSelect = document.getElementById('customer-period-select');
     var companySelect = document.getElementById('customer-company-select');
-    var groupSelect = document.getElementById('customer-group-select');
+    var groupMulti = createMultiSelect(
+      document.getElementById('customer-group-ms'), 'All Groups', function(sel){
+        state.groups = sel;
+        render();
+      });
     var modeToggle = document.getElementById('customer-mode-toggle');
     var exportBtn = document.getElementById('customer-export-btn');
     var customerCombo = createAccountCombo(document.getElementById('customer-account-combo'), function(value){
       state.customer = value;
       render();
     });
+    wireSortableHeaders(reportHost, state, render);
 
     function setStatus(text, stale){
       statusText.textContent = text;
@@ -2997,13 +3452,7 @@
       state.company = companyIds.indexOf(prevCompany) !== -1 ? prevCompany : 'ALL';
       companySelect.value = state.company;
 
-      var groupIds = Object.keys(groups).sort();
-      var prevGroup = state.group;
-      groupSelect.innerHTML = '<option value="ALL">All Groups</option>' + groupIds.map(function(g){
-        return '<option value="' + escapeAttr(g) + '">' + escapeHtml(g) + '</option>';
-      }).join('');
-      state.group = groupIds.indexOf(prevGroup) !== -1 ? prevGroup : 'ALL';
-      groupSelect.value = state.group;
+      state.groups = groupMulti.populate(Object.keys(groups).sort());
 
       state.customer = customerCombo.populate(customers, state.customer);
     }
@@ -3011,7 +3460,7 @@
     function applyFilters(rows){
       return rows.filter(function(r){
         if (state.company !== 'ALL' && r.legalEntity !== state.company) return false;
-        if (state.group !== 'ALL' && r.customerGroup !== state.group) return false;
+        if (state.groups.length && state.groups.indexOf(r.customerGroup) === -1) return false;
         if (state.customer !== 'ALL' && r.customerAccount !== state.customer) return false;
         return true;
       });
@@ -3023,10 +3472,12 @@
         '<th class="col-left">Customer Account</th>' +
         '<th class="col-left">Customer Name</th>' +
         '<th class="col-left">Customer Group</th>' +
-        '<th>Balance (Accounting)<span class="ccy-tag">local</span></th>' +
-        '<th>Balance (Reporting)<span class="ccy-tag">USD</span></th>' +
+        thSort(state, 'accounting', 'Balance (Accounting)<span class="ccy-tag">local</span>') +
+        thSort(state, 'reporting', 'Balance (Reporting)<span class="ccy-tag">USD</span>') +
         '</tr>';
       var exportRows = [['Company', 'Customer Account', 'Customer Name', 'Customer Group', 'Balance (Accounting)', 'Balance (Reporting, USD)']];
+      rows.forEach(function(r){ r.values = { accounting: r.accounting, reporting: r.reporting }; });
+      rows = applySort(state, rows);
       var totals = { accounting: 0, reporting: 0 };
       var bodyRows = rows.map(function(r){
         totals.accounting += r.accounting;
@@ -3078,12 +3529,16 @@
         '<th class="col-left">Customer Name</th>' +
         '<th class="col-left">Customer Group</th>' +
         '<th class="col-left">Currency</th>' +
-        '<th>Amount<span class="ccy-tag">txn</span></th>' +
+        thSort(state, 'amount', 'Amount<span class="ccy-tag">txn</span>') +
         '</tr>';
       var exportRows = [['Company', 'Customer Account', 'Customer Name', 'Customer Group', 'Currency', 'Amount (transaction currency)']];
       var sorted = rows.slice().sort(function(a, b){
         return a.legalEntity.localeCompare(b.legalEntity) || a.customerAccount.localeCompare(b.customerAccount) || a.currency.localeCompare(b.currency);
       });
+      if (state.sortKey === 'amount'){
+        sorted.forEach(function(r){ r.values = { amount: r.amount }; });
+        sorted = applySort(state, sorted);
+      }
       var bodyRows = sorted.map(function(r){
         var f = fmtAmount(r.amount);
         exportRows.push([r.legalEntity, r.customerAccount, r.customerName || '', r.customerGroup || '', r.currency, r.amount]);
@@ -3145,12 +3600,12 @@
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    groupSelect.addEventListener('change', function(){ state.group = groupSelect.value; render(); });
     periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     modeToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-mode]');
       if (!btn) return;
       state.mode = btn.getAttribute('data-mode');
+      state.sortKey = null; // the two modes have different amount columns
       Array.prototype.forEach.call(modeToggle.querySelectorAll('button'), function(b){
         b.classList.toggle('active', b === btn);
       });
@@ -3218,4 +3673,3 @@
   })();
 })();
 </script>
-

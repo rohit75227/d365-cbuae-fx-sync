@@ -23,6 +23,27 @@ Routine's own prompt (written before Company TB / By Currency existed)
 only ever touched `tb`, which would have left `movement`/`currencytb`/
 `currencymovement` silently stale for the current period every day.
 
+**2026-09-14: UI enhancements — multi-select Main Account, sortable amount
+columns, Company TB date range.** Report-owner requests, all client-side
+(no new collections, no sync changes):
+- The "Main Account" filter on Consolidated, Company TB, By Currency, and
+  Intercompany is now multi-select (checkboxes in the same search-combo
+  panel) instead of picking one account at a time; an empty selection
+  still means "all accounts."
+- Every amount column, on all six tabs, is now sortable (click a header to
+  sort highest-to-lowest, click again for lowest-to-highest).
+- Company TB's Period dropdown was replaced with Start Date / End Date
+  pickers. Opening Balance is now the closing balance as of the day before
+  Start Date, Closing Balance is as of End Date, and the old "Current
+  Month Dr/Cr" columns are renamed "Current Period Dr/Cr" and sum every
+  month's movement from Start Date through End Date inclusive. Both dates
+  snap to the month they fall in — `tb`/`movement`/`currencytb`/
+  `currencymovement` are only synced at month-end, so there's no daily
+  granularity to interpolate. Applies to both the Reporting/Accounting
+  mode and the Transaction Currency mode. The other tabs (By Currency,
+  Intercompany, Vendor Balance, Customer Balance) are unchanged and still
+  use a single period/month picker.
+
 ## How data gets in (no credentials needed)
 
 The report reads a shared, org-internal database attached to that Artifact
