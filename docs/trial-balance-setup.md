@@ -36,7 +36,11 @@ columns, Company TB date range.** Report-owner requests, all client-side
 - Every amount column, on all six tabs, is now sortable (click a header to
   sort highest-to-lowest, click again for lowest-to-highest).
 - Company TB's Period dropdown was replaced with Start Date / End Date
-  pickers. Opening Balance is now the closing balance as of the day before
+  pickers (native `<input type="date">`, calendar icon restored — an
+  earlier `appearance:none` had hidden it — and clicking anywhere in the
+  field, not just the tiny icon, opens the calendar via `showPicker()`
+  where the browser supports it; typing the date directly still works
+  either way). Opening Balance is now the closing balance as of the day before
   Start Date, Closing Balance is as of End Date, and the old "Current
   Month Dr/Cr" columns are renamed "Current Period Dr/Cr" and sum every
   month's movement from Start Date through End Date inclusive. Both dates

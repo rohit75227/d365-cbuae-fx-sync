@@ -225,7 +225,6 @@
   select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
 
   input.date-input{
-    appearance:none;
     font:inherit;
     font-size:13px;
     font-weight:600;
@@ -242,6 +241,11 @@
   :root[data-theme="dark"] input.date-input{ color-scheme:dark; }
   input.date-input:hover{ border-color:var(--accent); }
   input.date-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  /* Keep the native calendar-picker icon (no appearance:none above, unlike
+     <select>) so clicking it opens the browser's own date picker; tint it
+     to fit the palette in supporting (WebKit/Blink) browsers. */
+  input.date-input::-webkit-calendar-picker-indicator{ cursor:pointer; opacity:.65; }
+  input.date-input::-webkit-calendar-picker-indicator:hover{ opacity:1; }
 
   .btn-export{
     appearance:none;
@@ -1480,6 +1484,22 @@
     return s === e ? monthLabel(s) : (monthLabel(s) + ' – ' + monthLabel(e));
   }
 
+  // A native <input type="date"> only opens its calendar when the tiny
+  // icon is clicked (typing into the rest of the field otherwise works
+  // fine already) -- this makes clicking anywhere in the field open the
+  // calendar too, same convenience an Excel-style date picker gives,
+  // while still leaving typing the date directly as an option.
+  // showPicker() is Chromium/Edge-only as of this writing; browsers
+  // without it just keep the icon-only default, so this only adds
+  // behavior, never removes it.
+  function wireDatePicker(input){
+    input.addEventListener('click', function(){
+      if (typeof input.showPicker === 'function'){
+        try { input.showPicker(); } catch (e) { /* e.g. not called from a user gesture -- ignore */ }
+      }
+    });
+  }
+
   // Merges an array of per-month movement docs (one row per account+company,
   // or account+company+currency) into a single summed-across-the-range
   // lookup keyed the same way loadShardedDoc's caller already keys rows.
@@ -1925,6 +1945,8 @@
     var companySelect = document.getElementById('company-select');
     var startDateInput = document.getElementById('company-start-date');
     var endDateInput = document.getElementById('company-end-date');
+    wireDatePicker(startDateInput);
+    wireDatePicker(endDateInput);
     var ccyToggle = document.getElementById('company-ccy-toggle');
     var accountCombo = createAccountMultiCombo(document.getElementById('company-account-combo'), function(values){
       state.accounts = values;
