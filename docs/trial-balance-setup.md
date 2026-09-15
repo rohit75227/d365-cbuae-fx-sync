@@ -1306,3 +1306,33 @@ local file: the local copy was a strict subset (every difference was a
 published addition, nothing local-only would have been lost), so it was
 safe to overwrite `report/consolidated-trial-balance.html` wholesale with
 the current published content.
+
+## Vendor Balance / Customer Balance tabs broke on load (real bug, fixed 2026-09-15)
+
+Both tabs showed "Could not load data — Failed to load vendor balance data
+for 2026-09: error: Cannot add property values, object is not extensible"
+for every period. Nothing was wrong with the data or the reads; the failure
+was in rendering, and it surfaced as a *load* error only because the render
+call sits inside the loader's `.then()`, so the `TypeError` it threw landed
+in the shared `.catch()` that writes the "could not load" message.
+
+Cause: the sortable-amount-column work stamped each row with its numeric
+column values immediately before sorting —
+
+```js
+rows.forEach(function(r){ r.values = { accounting: r.accounting, reporting: r.reporting }; });
+```
+
+— which is fine on the other four views, because those build their own row
+descriptor objects (`{ acc: acc, values: values, total: rowTotal }`) and
+stamp *those*. The Vendor and Customer views instead render the shard
+documents' rows directly, and rows read back from the report's data store
+come back frozen (non-extensible), so adding a property to one throws under
+`'use strict'`. The stamping ran unconditionally, before any sort was
+picked, so the tabs failed on first paint rather than on a header click.
+
+Fix: a shared `withSortValues(rows, valuesFor)` helper next to `applySort`
+returns shallow copies carrying every original field plus `values`, leaving
+the source rows untouched. All five call sites (Intercompany, plus both
+grains of Vendor and Customer) now go through it, so the pattern is safe
+regardless of where a view's rows came from.

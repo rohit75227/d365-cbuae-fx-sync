@@ -1106,6 +1106,25 @@
     });
   }
 
+  // Attaches the numeric column values `applySort` reads WITHOUT touching
+  // the source row. Rows read back from the report's data store come back
+  // frozen (non-extensible), so `row.values = {...}` throws "Cannot add
+  // property values, object is not extensible" under strict mode -- which
+  // is exactly what broke the Vendor and Customer views, whose rows are
+  // used straight from the shard documents instead of being wrapped in
+  // locally built row descriptors first. Returns shallow copies carrying
+  // every original field plus `values`.
+  function withSortValues(rows, valuesFor){
+    return rows.map(function(r){
+      var copy = {};
+      for (var k in r){
+        if (Object.prototype.hasOwnProperty.call(r, k)) copy[k] = r[k];
+      }
+      copy.values = valuesFor(r);
+      return copy;
+    });
+  }
+
   // Wires up sort-by-column clicks for a table that lives in `hostEl`
   // (delegated, since the table inside it is torn down and rebuilt on
   // every render): clicking a `<th data-sort="...">` sets that column as
@@ -3032,8 +3051,9 @@
         var exportHeader = ['Company', 'Account', 'Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Offset Company', 'Offset Account', 'Offset Net Balance (' + (ccy === 'reporting' ? 'USD' : 'local ccy') + ')', 'Difference' + (ccy === 'reporting' ? ' (USD)' : ' (mixed ccy)')];
         var exportRows = [exportHeader];
 
-        rows.forEach(function(r){ r.values = { ar: r.arValue, payable: r.payableValue, diff: r.arValue + r.payableValue }; });
-        rows = applySort(state, rows);
+        rows = applySort(state, withSortValues(rows, function(r){
+          return { ar: r.arValue, payable: r.payableValue, diff: r.arValue + r.payableValue };
+        }));
 
         var totals = { ar: 0, payable: 0, diff: 0 };
         var bodyRows = rows.map(function(r){
@@ -3285,8 +3305,9 @@
         thSort(state, 'reporting', 'Balance (Reporting)<span class="ccy-tag">USD</span>') +
         '</tr>';
       var exportRows = [['Company', 'Vendor Account', 'Vendor Name', 'Vendor Group', 'Balance (Accounting)', 'Balance (Reporting, USD)']];
-      rows.forEach(function(r){ r.values = { accounting: r.accounting, reporting: r.reporting }; });
-      rows = applySort(state, rows);
+      rows = applySort(state, withSortValues(rows, function(r){
+        return { accounting: r.accounting, reporting: r.reporting };
+      }));
       var totals = { accounting: 0, reporting: 0 };
       var bodyRows = rows.map(function(r){
         totals.accounting += r.accounting;
@@ -3345,8 +3366,7 @@
         return a.legalEntity.localeCompare(b.legalEntity) || a.vendorAccount.localeCompare(b.vendorAccount) || a.currency.localeCompare(b.currency);
       });
       if (state.sortKey === 'amount'){
-        sorted.forEach(function(r){ r.values = { amount: r.amount }; });
-        sorted = applySort(state, sorted);
+        sorted = applySort(state, withSortValues(sorted, function(r){ return { amount: r.amount }; }));
       }
       var bodyRows = sorted.map(function(r){
         var f = fmtAmount(r.amount);
@@ -3544,8 +3564,9 @@
         thSort(state, 'reporting', 'Balance (Reporting)<span class="ccy-tag">USD</span>') +
         '</tr>';
       var exportRows = [['Company', 'Customer Account', 'Customer Name', 'Customer Group', 'Balance (Accounting)', 'Balance (Reporting, USD)']];
-      rows.forEach(function(r){ r.values = { accounting: r.accounting, reporting: r.reporting }; });
-      rows = applySort(state, rows);
+      rows = applySort(state, withSortValues(rows, function(r){
+        return { accounting: r.accounting, reporting: r.reporting };
+      }));
       var totals = { accounting: 0, reporting: 0 };
       var bodyRows = rows.map(function(r){
         totals.accounting += r.accounting;
@@ -3604,8 +3625,7 @@
         return a.legalEntity.localeCompare(b.legalEntity) || a.customerAccount.localeCompare(b.customerAccount) || a.currency.localeCompare(b.currency);
       });
       if (state.sortKey === 'amount'){
-        sorted.forEach(function(r){ r.values = { amount: r.amount }; });
-        sorted = applySort(state, sorted);
+        sorted = applySort(state, withSortValues(sorted, function(r){ return { amount: r.amount }; }));
       }
       var bodyRows = sorted.map(function(r){
         var f = fmtAmount(r.amount);
