@@ -1336,3 +1336,41 @@ returns shallow copies carrying every original field plus `values`, leaving
 the source rows untouched. All five call sites (Intercompany, plus both
 grains of Vendor and Customer) now go through it, so the pattern is safe
 regardless of where a view's rows came from.
+
+## Company TB Start/End Date: own calendar instead of the native picker (2026-09-15)
+
+The two date fields relied on the browser's own calendar, opened via
+`showPicker()` on click (plus the native indicator icon). Inside the frame
+the published report renders in, that popup does not reliably appear --
+`showPicker()` can be refused outright -- which left the fields effectively
+typing-only.
+
+Replaced `wireDatePicker()` with `createDatePicker()`, which draws the
+calendar in the page itself:
+
+- the field stays a real `<input type="date">`, so typing a date, the
+  `YYYY-MM-DD` value every caller reads, and the `min`/`max` clamp behave
+  exactly as before;
+- clicking the field (or its calendar button) opens a month grid,
+  Monday-first, with the current value highlighted and today outlined;
+- **Month and Year are dropdowns**, not just arrows -- the synced range runs
+  2019-01 through the latest period, so stepping a month at a time would be
+  unusable; the arrows disable themselves at the ends of that range;
+- days outside `[min, max]` render disabled rather than hidden, so the edge
+  of the synced range is visible rather than silently missing;
+- picking a day sets the value and dispatches `change`, which is what
+  triggers the view's own reload (assigning `.value` from script does not
+  fire that event by itself);
+- the native `::-webkit-calendar-picker-indicator` is hidden so there is one
+  calendar button, not two.
+
+One bug found and fixed while testing this in a real browser: re-rendering
+the panel on an arrow click detaches the clicked element, so that same click
+reached the document-level outside-click handler as a click *outside* the
+calendar and closed it. The panel now marks the event it handled and the
+document handler lets that one through.
+
+Verified in headless Chromium (Playwright driving the real page against a
+stubbed, frozen-document `db`): 21 checks covering open/close, the month
+grid, min/max edges, arrow and dropdown navigation, picking a day, Escape,
+outside-click, and typing a date by hand.

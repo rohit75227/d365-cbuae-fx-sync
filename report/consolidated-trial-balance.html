@@ -241,11 +241,90 @@
   :root[data-theme="dark"] input.date-input{ color-scheme:dark; }
   input.date-input:hover{ border-color:var(--accent); }
   input.date-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
-  /* Keep the native calendar-picker icon (no appearance:none above, unlike
-     <select>) so clicking it opens the browser's own date picker; tint it
-     to fit the palette in supporting (WebKit/Blink) browsers. */
-  input.date-input::-webkit-calendar-picker-indicator{ cursor:pointer; opacity:.65; }
-  input.date-input::-webkit-calendar-picker-indicator:hover{ opacity:1; }
+
+  /* Date field + the calendar it opens (Company TB Start/End Date). The
+     field itself is still a real <input type="date"> -- typing and the
+     min/max clamp are unchanged -- but the calendar is drawn by this page
+     (createDatePicker) rather than by the browser, so it appears reliably
+     inside the frame this report renders in. The native indicator is
+     hidden so there is exactly one calendar button to click. */
+  input.date-input::-webkit-calendar-picker-indicator{ display:none; }
+  .date-field{ position:relative; display:inline-flex; align-items:center; }
+  .date-field input.date-input{ padding-right:36px; }
+  .cal-btn{
+    position:absolute;
+    right:5px;
+    top:50%;
+    transform:translateY(-50%);
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:var(--text-dim);
+    padding:4px;
+    line-height:0;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .cal-btn:hover{ color:var(--accent); background:var(--total-row-bg); }
+  .cal-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .cal-panel{
+    position:absolute;
+    top:calc(100% + 6px);
+    left:0;
+    z-index:30;
+    width:250px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    box-shadow:var(--shadow);
+    padding:10px;
+  }
+  .cal-head{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .cal-head select{ flex:1 1 auto; min-width:0; font-size:12px; padding:5px 22px 5px 8px; background-position:right 7px center; }
+  .cal-nav{
+    appearance:none;
+    flex:none;
+    width:26px;
+    height:26px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:var(--surface);
+    color:var(--text);
+    font-size:14px;
+    line-height:1;
+    cursor:pointer;
+  }
+  .cal-nav:hover:not(:disabled){ border-color:var(--accent); color:var(--accent); }
+  .cal-nav:disabled{ opacity:.4; cursor:default; }
+  .cal-nav:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; }
+  .cal-dow{
+    text-align:center;
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    padding:4px 0;
+  }
+  .cal-day{
+    appearance:none;
+    border:none;
+    background:transparent;
+    color:var(--text);
+    font:inherit;
+    font-size:12px;
+    font-variant-numeric:tabular-nums;
+    height:30px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .cal-day:hover:not(:disabled){ background:var(--total-row-bg); }
+  .cal-day:disabled{ color:var(--text-dim); opacity:.35; cursor:default; }
+  .cal-day.today{ box-shadow:inset 0 0 0 1px var(--accent); }
+  .cal-day.selected{ background:var(--accent); color:var(--accent-ink); font-weight:700; }
+  .cal-day:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+  .cal-empty{ height:30px; }
 
   .btn-export{
     appearance:none;
@@ -1503,19 +1582,186 @@
     return s === e ? monthLabel(s) : (monthLabel(s) + ' – ' + monthLabel(e));
   }
 
-  // A native <input type="date"> only opens its calendar when the tiny
-  // icon is clicked (typing into the rest of the field otherwise works
-  // fine already) -- this makes clicking anywhere in the field open the
-  // calendar too, same convenience an Excel-style date picker gives,
-  // while still leaving typing the date directly as an option.
-  // showPicker() is Chromium/Edge-only as of this writing; browsers
-  // without it just keep the icon-only default, so this only adds
-  // behavior, never removes it.
-  function wireDatePicker(input){
-    input.addEventListener('click', function(){
-      if (typeof input.showPicker === 'function'){
-        try { input.showPicker(); } catch (e) { /* e.g. not called from a user gesture -- ignore */ }
+  // Gives a date field its own calendar, opened by clicking the field or
+  // its calendar button. The field stays a real <input type="date"> --
+  // typing a date, the YYYY-MM-DD value every caller reads, and the
+  // min/max clamp all behave exactly as before -- but the calendar itself
+  // is built here instead of relying on the browser's own popup (which
+  // showPicker() can refuse outright inside the frame this report renders
+  // in, leaving the field typing-only). Month and Year are dropdowns, not
+  // just arrows: the synced range spans ~8 years, so stepping a month at a
+  // time back to 2019 would be unusable. Days outside [min, max] render
+  // disabled rather than hidden, so the edge of the synced range is
+  // visible rather than silently missing.
+  function createDatePicker(input){
+    var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; // Monday-first, matching the fiscal calendar's week
+
+    var wrap = document.createElement('div');
+    wrap.className = 'date-field';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cal-btn';
+    btn.setAttribute('aria-label', 'Open calendar');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">' +
+      '<rect x="1.75" y="3.25" width="12.5" height="11" rx="2"></rect>' +
+      '<path d="M1.75 6.75h12.5M5.25 1.75v3M10.75 1.75v3"></path></svg>';
+    wrap.appendChild(btn);
+
+    var panel = document.createElement('div');
+    panel.className = 'cal-panel';
+    panel.hidden = true;
+    wrap.appendChild(panel);
+
+    var viewYear = 0, viewMonth = 0; // month is 1-based, like the YYYY-MM-DD value
+
+    function pad2(n){ return n < 10 ? '0' + n : '' + n; }
+    function ymdOf(y, m, d){ return y + '-' + pad2(m) + '-' + pad2(d); }
+    function parts(value){
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return null;
+      var p = value.split('-');
+      return { y: parseInt(p[0], 10), m: parseInt(p[1], 10), d: parseInt(p[2], 10) };
+    }
+    function todayStr(){
+      var t = new Date();
+      return ymdOf(t.getFullYear(), t.getMonth() + 1, t.getDate());
+    }
+    // String compare is a correct date compare for zero-padded YYYY-MM-DD.
+    function outOfRange(value){
+      return (input.min && value < input.min) || (input.max && value > input.max);
+    }
+    function clampToRange(value){
+      if (input.min && value < input.min) return input.min;
+      if (input.max && value > input.max) return input.max;
+      return value;
+    }
+
+    // Open on whatever the field currently holds; with no value yet, land on
+    // today snapped into the allowed range rather than on an empty month.
+    function syncViewToValue(){
+      var p = parts(input.value) || parts(clampToRange(todayStr()));
+      if (!p){
+        var t = new Date();
+        p = { y: t.getFullYear(), m: t.getMonth() + 1 };
       }
+      viewYear = p.y;
+      viewMonth = p.m;
+    }
+
+    function monthIndex(y, m){ return y * 12 + (m - 1); }
+    function canShift(delta){
+      var target = monthIndex(viewYear, viewMonth) + delta;
+      var lo = parts(input.min), hi = parts(input.max);
+      if (lo && target < monthIndex(lo.y, lo.m)) return false;
+      if (hi && target > monthIndex(hi.y, hi.m)) return false;
+      return true;
+    }
+    function shiftMonth(delta){
+      var i = monthIndex(viewYear, viewMonth) + delta;
+      viewYear = Math.floor(i / 12);
+      viewMonth = (i % 12) + 1;
+    }
+    function yearRange(){
+      var lo = parts(input.min), hi = parts(input.max);
+      var first = lo ? lo.y : viewYear - 5;
+      var last = hi ? hi.y : viewYear + 5;
+      return { first: Math.min(first, viewYear), last: Math.max(last, viewYear) };
+    }
+
+    function render(){
+      var years = yearRange();
+      // Monday-first column for the 1st of the shown month (getUTCDay is Sunday-first).
+      var lead = (new Date(Date.UTC(viewYear, viewMonth - 1, 1)).getUTCDay() + 6) % 7;
+      var days = lastDayOfMonth(viewYear, viewMonth);
+      var selected = input.value;
+      var today = todayStr();
+
+      var html = '<div class="cal-head">' +
+        '<button type="button" class="cal-nav" data-nav="-1" aria-label="Previous month"' + (canShift(-1) ? '' : ' disabled') + '>&lsaquo;</button>' +
+        '<select class="cal-month" aria-label="Month">' +
+          MONTH_NAMES.map(function(name, i){
+            return '<option value="' + (i + 1) + '"' + (i + 1 === viewMonth ? ' selected' : '') + '>' + name + '</option>';
+          }).join('') +
+        '</select>' +
+        '<select class="cal-year" aria-label="Year">';
+      for (var y = years.first; y <= years.last; y++){
+        html += '<option value="' + y + '"' + (y === viewYear ? ' selected' : '') + '>' + y + '</option>';
+      }
+      html += '</select>' +
+        '<button type="button" class="cal-nav" data-nav="1" aria-label="Next month"' + (canShift(1) ? '' : ' disabled') + '>&rsaquo;</button>' +
+        '</div><div class="cal-grid">' +
+        DOW.map(function(d){ return '<div class="cal-dow">' + d + '</div>'; }).join('');
+      for (var i = 0; i < lead; i++) html += '<div class="cal-empty"></div>';
+      for (var d = 1; d <= days; d++){
+        var value = ymdOf(viewYear, viewMonth, d);
+        var cls = 'cal-day' + (value === selected ? ' selected' : '') + (value === today ? ' today' : '');
+        html += '<button type="button" class="' + cls + '" data-date="' + value + '"' +
+          (outOfRange(value) ? ' disabled' : '') + '>' + d + '</button>';
+      }
+      panel.innerHTML = html + '</div>';
+    }
+
+    function open(){
+      syncViewToValue();
+      render();
+      panel.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+    }
+    function close(){
+      panel.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+      if (panel.hidden) open(); else close();
+    });
+    input.addEventListener('click', function(){ if (panel.hidden) open(); });
+
+    // Clicking a day or an arrow re-renders the panel, which detaches the
+    // very element that was clicked -- so by the time that same click
+    // bubbles up to the document handler below, wrap.contains(e.target) is
+    // already false and it would read as a click outside the calendar.
+    // Remembering the event the panel handled lets that one through, so an
+    // arrow press moves the month instead of closing the calendar.
+    var handledClick = null;
+
+    panel.addEventListener('click', function(e){
+      handledClick = e;
+      var nav = e.target.closest('.cal-nav');
+      if (nav){
+        if (nav.disabled) return;
+        shiftMonth(parseInt(nav.getAttribute('data-nav'), 10));
+        render();
+        return;
+      }
+      var day = e.target.closest('.cal-day[data-date]');
+      if (!day || day.disabled) return;
+      input.value = day.getAttribute('data-date');
+      close();
+      // The view's own 'change' listener does the reload -- setting .value
+      // from script never fires that event on its own.
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    panel.addEventListener('change', function(e){
+      var monthSel = e.target.closest('.cal-month');
+      var yearSel = e.target.closest('.cal-year');
+      if (!monthSel && !yearSel) return;
+      if (monthSel) viewMonth = parseInt(monthSel.value, 10);
+      if (yearSel) viewYear = parseInt(yearSel.value, 10);
+      render();
+    });
+
+    document.addEventListener('click', function(e){
+      if (e === handledClick) return;
+      if (!panel.hidden && !wrap.contains(e.target)) close();
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && !panel.hidden) close();
     });
   }
 
@@ -1964,8 +2210,8 @@
     var companySelect = document.getElementById('company-select');
     var startDateInput = document.getElementById('company-start-date');
     var endDateInput = document.getElementById('company-end-date');
-    wireDatePicker(startDateInput);
-    wireDatePicker(endDateInput);
+    createDatePicker(startDateInput);
+    createDatePicker(endDateInput);
     var ccyToggle = document.getElementById('company-ccy-toggle');
     var accountCombo = createAccountMultiCombo(document.getElementById('company-account-combo'), function(values){
       state.accounts = values;
