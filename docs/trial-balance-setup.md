@@ -51,6 +51,18 @@ columns, Company TB date range.** Report-owner requests, all client-side
   Intercompany, Vendor Balance, Customer Balance) are unchanged and still
   use a single period/month picker.
 
+**2026-09-16: masthead logo, and a note on the Company TB date pickers.**
+Report-owner request: replaced the plain text "hudabeauty" wordmark in the
+masthead with the actual Huda Beauty logo image (copied from another
+report artifact's `<img class="hb-logo">`, embedded here as a data URI so
+no external asset load is needed; rendered white via `filter:brightness(0)
+invert(1)` against the dark masthead background). Client-side only, no
+sync changes. Separately: the Company TB Start Date / End Date fields now
+open a full in-page calendar (month/year dropdowns, out-of-range days
+disabled) instead of relying on the browser's native `showPicker()` --
+the 2026-09-14 entry above described the `showPicker()` approach, which
+has since been superseded in the live artifact.
+
 ## How data gets in (no credentials needed)
 
 The report reads a shared, org-internal database attached to that Artifact
