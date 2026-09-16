@@ -75,6 +75,17 @@ keeping periods in the newest-first order `tb/index` already provides
 instead of alphabetizing. Company TB is unaffected (it uses Start/End
 date pickers, not a Period dropdown, since the 2026-09-14 change).
 
+**2026-09-16, later still: fixed uneven control-box widths in the controls
+bar.** Report-owner reported the Period box crowding out the Main Account
+box (its text truncating) once Period held a real selected value. Root
+cause: `.control-group` (the wrapper around each eyebrow + control) had no
+explicit `flex-shrink`, so once the controls bar ran short on horizontal
+space it shrank whichever box happened to yield first, unevenly, instead
+of wrapping. Fixed by adding `flex:none` to `.control-group` so every
+control box (Currency toggle, Period, Main Account, Export button, status
+pill) keeps its natural width and the row wraps to a new line under space
+pressure instead of squeezing any one box.
+
 ## How data gets in (no credentials needed)
 
 The report reads a shared, org-internal database attached to that Artifact
