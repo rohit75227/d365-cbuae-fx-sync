@@ -63,6 +63,18 @@ disabled) instead of relying on the browser's native `showPicker()` --
 the 2026-09-14 entry above described the `showPicker()` approach, which
 has since been superseded in the live artifact.
 
+**2026-09-16, later same day: Period dropdown now matches the Main
+Account dropdown's style.** Report-owner request. The plain native
+`<select>` used for Period on Consolidated, By Currency, Intercompany,
+Vendor Balance, and Customer Balance is replaced with the same
+search-combo shell as the "Main Account" filter (`.acct-combo`: a text
+input opening a custom `.acct-combo-panel` list) via a new shared
+`createPeriodCombo()` helper -- visually and behaviorally identical to
+Main Account's `createAccountCombo()`, just without an "All" option and
+keeping periods in the newest-first order `tb/index` already provides
+instead of alphabetizing. Company TB is unaffected (it uses Start/End
+date pickers, not a Period dropdown, since the 2026-09-14 change).
+
 ## How data gets in (no credentials needed)
 
 The report reads a shared, org-internal database attached to that Artifact

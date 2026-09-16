@@ -827,7 +827,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Period</span>
-      <select id="period-select" aria-label="Fiscal year and period"></select>
+      <div class="acct-combo" id="period-combo">
+        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
@@ -922,7 +925,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Period</span>
-      <select id="currency-period-select" aria-label="Fiscal year and period"></select>
+      <div class="acct-combo" id="currency-period-combo">
+        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
@@ -977,7 +983,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Period</span>
-      <select id="intercompany-period-select" aria-label="Fiscal year and period"></select>
+      <div class="acct-combo" id="intercompany-period-combo">
+        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Main Account</span>
@@ -1024,7 +1033,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Period</span>
-      <select id="vendor-period-select" aria-label="Fiscal year and period"></select>
+      <div class="acct-combo" id="vendor-period-combo">
+        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Company</span>
@@ -1080,7 +1092,10 @@
     </div>
     <div class="control-group">
       <span class="eyebrow">Period</span>
-      <select id="customer-period-select" aria-label="Fiscal year and period"></select>
+      <div class="acct-combo" id="customer-period-combo">
+        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
+        <div class="acct-combo-panel" hidden></div>
+      </div>
     </div>
     <div class="control-group">
       <span class="eyebrow">Company</span>
@@ -1300,6 +1315,77 @@
         ids = Object.keys(accountMap).sort();
         currentValue = ids.indexOf(preferredValue) !== -1 ? preferredValue : 'ALL';
         input.value = label(currentValue);
+        return currentValue;
+      },
+    };
+  }
+
+  // Same acct-combo search/select shell as createAccountCombo, but for the
+  // Period picker on the five tabs that use one (Consolidated, By Currency,
+  // Intercompany, Vendor Balance, Customer Balance) -- so "Period" reads
+  // and behaves exactly like "Main Account" rather than a native <select>.
+  // No "All" sentinel (a period tab always has exactly one period
+  // selected), and options keep the order they're given in (newest-first,
+  // matching the shared `index`) rather than being alphabetized.
+  function createPeriodCombo(rootEl, onSelect){
+    var input = rootEl.querySelector('.acct-combo-input');
+    var panel = rootEl.querySelector('.acct-combo-panel');
+    var periods = [];
+    var byKey = {};
+    var currentValue = null;
+
+    function label(key){
+      var p = byKey[key];
+      return p ? periodLabel(p) : '';
+    }
+
+    function renderPanel(filterText){
+      var q = (filterText || '').trim().toLowerCase();
+      var matches = !q ? periods : periods.filter(function(p){
+        return p.key.toLowerCase().indexOf(q) !== -1 || periodLabel(p).toLowerCase().indexOf(q) !== -1;
+      });
+      panel.innerHTML = matches.length
+        ? matches.map(function(p){
+            return '<div class="acct-combo-option' + (p.key === currentValue ? ' active' : '') + '" data-value="' + escapeAttr(p.key) + '">' + escapeHtml(periodLabel(p)) + '</div>';
+          }).join('')
+        : '<div class="acct-combo-empty">No matching periods</div>';
+      panel.hidden = false;
+    }
+
+    function close(){ panel.hidden = true; }
+
+    function selectValue(key){
+      currentValue = key;
+      input.value = label(key);
+      close();
+      onSelect(currentValue);
+    }
+
+    input.addEventListener('focus', function(){ input.select(); renderPanel(''); });
+    input.addEventListener('input', function(){ renderPanel(input.value); });
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ close(); input.blur(); }
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        var first = panel.querySelector('.acct-combo-option[data-value]');
+        if (first) selectValue(first.getAttribute('data-value'));
+      }
+    });
+    input.addEventListener('blur', function(){ setTimeout(close, 150); });
+    panel.addEventListener('mousedown', function(e){
+      var opt = e.target.closest('.acct-combo-option[data-value]');
+      if (!opt) return;
+      e.preventDefault(); // keep focus on input so the blur-close timer above doesn't race this
+      selectValue(opt.getAttribute('data-value'));
+    });
+
+    return {
+      populate: function(newPeriods, preferredKey){
+        periods = newPeriods;
+        byKey = {};
+        periods.forEach(function(p){ byKey[p.key] = p; });
+        currentValue = byKey[preferredKey] ? preferredKey : (periods[0] ? periods[0].key : null);
+        input.value = currentValue ? label(currentValue) : '';
         return currentValue;
       },
     };
@@ -1857,7 +1943,10 @@
     var reportHost = document.getElementById('report-host');
     var bannerHost = document.getElementById('banner-host');
     var notesHost = document.getElementById('notes-host');
-    var periodSelect = document.getElementById('period-select');
+    var periodCombo = createPeriodCombo(document.getElementById('period-combo'), function(key){
+      state.periodKey = key;
+      loadPeriod(key);
+    });
     var ccyToggle = document.getElementById('ccy-toggle');
     var accountCombo = createAccountMultiCombo(document.getElementById('account-combo'), function(values){
       state.accounts = values;
@@ -2065,12 +2154,7 @@
     }
 
     function populatePeriods(){
-      var prevSelection = periodSelect.value;
-      periodSelect.innerHTML = index.map(function(p){
-        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
-      }).join('');
-      var toSelect = index.some(function(p){ return p.key === prevSelection; }) ? prevSelection : index[0].key;
-      periodSelect.value = toSelect;
+      var toSelect = periodCombo.populate(index, state.periodKey);
       if (toSelect !== state.periodKey){
         state.periodKey = toSelect;
         loadPeriod(toSelect);
@@ -2087,11 +2171,6 @@
       if (state.currentPeriodDoc && state.periodKey){
         loadPeriod(state.periodKey);
       }
-    });
-
-    periodSelect.addEventListener('change', function(){
-      state.periodKey = periodSelect.value;
-      loadPeriod(state.periodKey);
     });
 
     exportBtn.addEventListener('click', function(){
@@ -2729,7 +2808,7 @@
     var bannerHost = document.getElementById('currency-banner-host');
     var notesHost = document.getElementById('currency-notes-host');
     var companySelect = document.getElementById('currency-company-select');
-    var periodSelect = document.getElementById('currency-period-select');
+    var periodCombo = createPeriodCombo(document.getElementById('currency-period-combo'), function(key){ state.periodKey = key; render(); });
     var ccyToggle = document.getElementById('currency-ccy-toggle');
     var accountCombo = createAccountMultiCombo(document.getElementById('currency-account-combo'), function(values){
       state.accounts = values;
@@ -2937,17 +3016,12 @@
       if (!state.company && sortedEntities.length) state.company = sortedEntities[0].code;
       companySelect.value = state.company;
 
-      periodSelect.innerHTML = index.map(function(p){
-        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
-      }).join('');
-      if (!state.periodKey) state.periodKey = index[0].key;
-      periodSelect.value = state.periodKey;
+      state.periodKey = periodCombo.populate(index, state.periodKey);
 
       render();
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     ccyToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-ccy]');
       if (!btn) return;
@@ -3061,7 +3135,7 @@
     var bannerHost = document.getElementById('intercompany-banner-host');
     var notesHost = document.getElementById('intercompany-notes-host');
     var companySelect = document.getElementById('intercompany-company-select');
-    var periodSelect = document.getElementById('intercompany-period-select');
+    var periodCombo = createPeriodCombo(document.getElementById('intercompany-period-combo'), function(key){ state.periodKey = key; render(); });
     var ccyToggle = document.getElementById('intercompany-ccy-toggle');
     var accountCombo = createAccountMultiCombo(document.getElementById('intercompany-account-combo'), function(values){
       state.accounts = values;
@@ -3384,20 +3458,12 @@
       if (!state.company) state.company = 'ALL';
       companySelect.value = state.company;
 
-      periodSelect.innerHTML = index.map(function(p){
-        return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
-      }).join('');
-      if (!state.periodKey) state.periodKey = index[0].key;
-      periodSelect.value = state.periodKey;
+      state.periodKey = periodCombo.populate(index, state.periodKey);
 
       render();
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    periodSelect.addEventListener('change', function(){
-      state.periodKey = periodSelect.value;
-      render();
-    });
 
     ccyToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-ccy]');
@@ -3462,7 +3528,7 @@
     var reportHost = document.getElementById('vendor-report-host');
     var bannerHost = document.getElementById('vendor-banner-host');
     var notesHost = document.getElementById('vendor-notes-host');
-    var periodSelect = document.getElementById('vendor-period-select');
+    var periodCombo = createPeriodCombo(document.getElementById('vendor-period-combo'), function(key){ state.periodKey = key; render(); });
     var companySelect = document.getElementById('vendor-company-select');
     var groupMulti = createMultiSelect(
       document.getElementById('vendor-group-ms'), 'All Groups', function(sel){
@@ -3681,7 +3747,6 @@
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     modeToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-mode]');
       if (!btn) return;
@@ -3704,11 +3769,7 @@
           setStatus('No data yet', true);
           return;
         }
-        if (!state.periodKey) state.periodKey = index[0].key;
-        periodSelect.innerHTML = index.map(function(p){
-          return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
-        }).join('');
-        periodSelect.value = state.periodKey;
+        state.periodKey = periodCombo.populate(index, state.periodKey);
         render();
       },
     };
@@ -3729,7 +3790,7 @@
     var reportHost = document.getElementById('customer-report-host');
     var bannerHost = document.getElementById('customer-banner-host');
     var notesHost = document.getElementById('customer-notes-host');
-    var periodSelect = document.getElementById('customer-period-select');
+    var periodCombo = createPeriodCombo(document.getElementById('customer-period-combo'), function(key){ state.periodKey = key; render(); });
     var companySelect = document.getElementById('customer-company-select');
     var groupMulti = createMultiSelect(
       document.getElementById('customer-group-ms'), 'All Groups', function(sel){
@@ -3940,7 +4001,6 @@
     }
 
     companySelect.addEventListener('change', function(){ state.company = companySelect.value; render(); });
-    periodSelect.addEventListener('change', function(){ state.periodKey = periodSelect.value; render(); });
     modeToggle.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-mode]');
       if (!btn) return;
@@ -3963,11 +4023,7 @@
           setStatus('No data yet', true);
           return;
         }
-        if (!state.periodKey) state.periodKey = index[0].key;
-        periodSelect.innerHTML = index.map(function(p){
-          return '<option value="' + p.key + '">' + periodLabel(p) + '</option>';
-        }).join('');
-        periodSelect.value = state.periodKey;
+        state.periodKey = periodCombo.populate(index, state.periodKey);
         render();
       },
     };
