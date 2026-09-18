@@ -1566,3 +1566,111 @@ pairs, reporting-currency only, each off by $0.01) -- no real drift, no
 missing accounts either direction.
 
 No changes made to any other collection or to the report HTML.
+
+## 2026-09-18: `tb` backdating drift fixed for FY2026 P4-P7, plus a December 2025 anomaly found and deliberately NOT fixed
+
+Following the 2026-09-16/17/18 backdating-into-published-period incident
+documented above, this session ran the same single-combined-query
+methodology across every period a fresh `generaljournalentry.createddatetime
+>= 30 days ago` scan flagged as touched: 2025-12, 2026-01 through 2026-09
+(the `createddatetime` scan itself found small counts of new postings --
+8 to 103 lines -- landing as far back as **2025-12 and every month of
+2026 through June**, not just the current/prior period the old "spot-check
+the prior period only" heuristic checked. This is the concrete case for
+building the createddatetime-scoped procedure below).
+
+**Real drift found and fixed, FY2026 P4-P7**: 8-11 (account, entity)
+combinations per period, $4.5M-$22M each, same recurring
+intercompany-clearing-shaped pattern as every prior finding in this doc.
+Fixed by patching only the drifted cells (not a full period rebuild) in
+each period's shard, pinned `if_version` (all four periods were at
+shard/period version 8, now version 9).
+
+**2026-01 through 2026-03 and 2026-08/2026-09**: re-checked, zero drift
+(08/09 already corrected by the 09-16/17/18 fix; 01-03 apparently settled
+since original backfill).
+
+**2025-12 anomaly -- found, NOT fixed, needs dedicated follow-up.** A
+direct single-query cumulative-through-2025-12 fetch returned **0.00**
+for roughly 1,300 of 2,179 (account, entity) combinations that the
+currently-stored `tb/2025-12` shows large nonzero balances for -- several
+in the hundreds of millions to ~$1.5B on individual cells (e.g.
+`1131022`/HBFZ: fresh $0.00 vs. stored $1,547,724,999.84). Traced one
+flagged account (`1131022`/HBFZ, ledger 5637145327) back to raw
+`generaljournalaccountentry` history: it shows a large negative entry
+every December, reversed by an equally large positive entry the
+following January, every year from 2019 through 2025 -- consistent with
+this being a real, self-cancelling annual pattern (this account nets to
+~$0 cumulative through any December, by design), which would mean the
+**freshly computed $0.00 is correct and the currently-stored ~$1.5B
+figure is the one that's wrong** -- likely inherited from the
+2026-09-10 full-history rebuild's `monthly_movement_v2.sql`
+Closing/Opening-period handling (see that date's entry above), which
+this doc already flagged once for a different, since-fixed December
+bug. This was NOT pushed as a fix in this session: the dollar amounts
+are too large and the diagnosis too shallow (one account traced, not
+all ~1,300) to correct blind. **Next session or a dedicated
+investigation should**: (a) pull the full raw history for a sample of
+the ~1,300 flagged (account, entity) pairs the way `1131022`/HBFZ was
+traced here, (b) confirm the self-cancelling year-end pattern holds
+generally (not just for this one account), and (c) if confirmed,
+rebuild `tb/2025-12` (and, since Balance Sheet accounts carry forward
+cumulatively, re-validate whether this cascades into 2026-01 onward --
+though the 2026-01/02/03 direct-fetch checks above found zero drift
+against currently-stored data, which would mean either the bad
+December value doesn't actually propagate, or both the stored December
+AND the stored January-March values share the same wrong basis and
+happen to net out consistently -- this needs to be checked explicitly,
+not assumed).
+
+## 2026-09-18: Sync cadence changed to 4x/day, createddatetime-scoped
+
+Per the report owner's explicit request, the "Daily consolidated trial
+balance sync" Routine was changed from once daily (04:00 UTC) to four
+times a day (~8am, 12pm, 2pm, 5pm UAE time = 04:00/08:00/10:00/13:00
+UTC), and renamed "Intraday trial balance sync (4x/day,
+createddatetime-based)". Its stored prompt was rewritten to point at
+this new procedure instead of the old always-full "Daily refresh"
+section above.
+
+**New standard procedure for routine firings** (the "Daily refresh"
+section above remains the reference for a full manual deep-audit, but is
+no longer what every firing runs):
+
+1. Query `generaljournalentry` for `createddatetime >= current_date() -
+   INTERVAL 30 DAYS`, grouped by `date_format(accountingdate, 'yyyy-MM')`,
+   to find every accounting period with new or backdated activity in the
+   last 30 days -- not just the current and immediately-prior period.
+   This session's own run of this exact query is what surfaced the
+   2025-12 anomaly and the FY2026 P4-P7 drift above, both of which the
+   old "spot-check the prior period only" heuristic would have missed
+   entirely.
+2. For every flagged period, recompute closing + movement (Dr/Cr) +
+   currency breakdown in **one single combined SQL query execution**
+   (one `filtered`/`scoped` CTE, multiple `SUM(CASE WHEN ...)`
+   aggregates) -- never as separate queries, per this doc's
+   already-documented race-condition history (see the 2026-09-16/17/18
+   entry above). When multiple periods are flagged in the same fiscal
+   year, they can be computed in the SAME query execution too (add one
+   more pair of `SUM(CASE WHEN accountingdate < <cutoff> ...)` columns
+   per period cutoff) -- this session did exactly that across 10 periods
+   in one query/pagination pass.
+3. Diff the fresh result against currently-stored `tb` (and
+   `movement`/`currencytb`/`currencymovement`/`intercompany` for periods
+   where those are also affected) and push **only the cells that
+   actually drifted**, not a full period rebuild -- cheaper, and the
+   diff itself is the audit trail for what changed.
+4. Update `tb/index`'s `generatedAt` only for periods actually touched.
+5. Validate Opening + Dr - Cr = Closing across every (account, entity)
+   combination in every period touched (not sampled) before considering
+   the firing done.
+6. If a discovered anomaly looks too large or too uncertain to fix
+   confidently in one firing (see the 2025-12 anomaly above), leave it
+   documented and unfixed rather than guessing -- a wrong "fix" pushed
+   to a live financial report is worse than a known, flagged gap.
+
+**Vendor Balance / Customer Balance are still not part of either the
+old daily or the new intraday procedure** -- they were refreshed once
+this session (see the entry above) as a one-off catch-up, but adding
+them to the recurring procedure (both old and new) is still open follow-up
+work, not yet done.
