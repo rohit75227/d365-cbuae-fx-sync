@@ -1438,3 +1438,46 @@ implemented yet (this firing ran out of scope for it); the next
 person/session picking this up should consider adding it as an
 additional daily-sync step, run against every already-published period,
 not just the immediately-prior one.
+
+## 2026-09-18 daily sync: `intercompany` full-history rebuild only
+
+Scoped strictly to step 5 of the daily procedure -- `tb`, `movement`,
+`currencytb`, `currencymovement`, `vendor`, and `customer` were left
+untouched (owned by other concurrent workstreams today, including one
+fixing small `tb` backdating drift on FY2026 P4-P7).
+
+Re-ran `sql/intercompany_movement.sql` in full (5,644 rows, not
+truncated) via `execute_sql_read_only`, then
+`scripts/build_intercompany_periods.py --latest-ym 2026-09` to rebuild
+all 93 periods (2019-01 through 2026-09) from that one fetch, then
+`scripts/prepare_intercompany_writes.py` to shard the output.
+
+**Diffed before writing** rather than pushing unconditionally: fetched
+every one of the 93 currently-stored `intercompany/<period>/shards/0`
+documents (all were at a uniform version 6, confirming the doc's note)
+and compared them field-by-field against the freshly rebuilt output.
+**91 of 93 periods (2019-01 through 2026-07) were byte-identical** --
+only **2026-08 and 2026-09 had changed**, both driven by ordinary
+HBUK-side GL activity landing between the last `intercompany` rebuild
+and today (e.g. `1122005`/`1122105` and `2112005`/`2112105` HBUK pairs
+shifted by ~$2.68M/$3.1M accounting-currency; `2112123`/HBFR and
+`2112123`/HBUK also moved in September). Largest single-cell drift seen:
+~$4.77M (accounting currency) on a September HBFR/HBUK combination.
+Pushed only those two changed period shards via one atomic
+`ArtifactData` batch write, each pinned with `if_version: 6` (both
+succeeded, now at version 7); the two period-index docs
+(`fiscalYear`/`period`/`shardCount`) were unchanged (`shardCount` stays
+1 for both) so were not rewritten.
+
+**Cross-check against `tb/2026-09`**: re-read `tb/2026-09` and its shard
+fresh (per the note that another workstream validated August/September
+`tb` clean this morning -- confirmed: `generatedAt` was
+2026-09-18T12:28:02Z, i.e. from this morning's `tb` sync, not stale).
+Summed `intercompany`'s 2026-09 accounting-currency values across all 41
+accounts / 148 (account, entity) pairs and compared against `tb`'s value
+for the same mainaccountid/entity combinations: totals matched to
+$0.02 (a sub-cent floating-point rounding artifact on 4 of the 148
+pairs, reporting-currency only, each off by $0.01) -- no real drift, no
+missing accounts either direction.
+
+No changes made to any other collection or to the report HTML.
