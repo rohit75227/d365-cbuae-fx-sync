@@ -1341,3 +1341,100 @@ local file: the local copy was a strict subset (every difference was a
 published addition, nothing local-only would have been lost), so it was
 safe to overwrite `report/consolidated-trial-balance.html` wholesale with
 the current published content.
+
+## 2026-09-16/17/18: backdated postings into an ALREADY-PUBLISHED "closed" period -- a new, more severe drift category
+
+Prior sessions had documented *intra-session* drift (the same GL query
+returning different numbers minutes apart, because new postings landed
+mid-fetch -- see the September 2026 sync entries above). This firing's
+full, non-sampled Opening + Dr - Cr = Closing validation (every
+(account, entity) combo, not a sample) surfaced something worse: **a
+period we had already published as "closed" (August 2026, `tb/2026-08`,
+`generatedAt: 2026-09-14T12:03:52Z`) was stale by the time September's
+sync ran**, because new GL lines had been posted in D365 *after* that
+publish, dated *inside* August.
+
+**How it was found.** The validation compared September's freshly-fetched
+closing balance against `stored August closing (Opening) + September's
+Dr/Cr movement`. Two separate query fetches for September (tb closing,
+then movement) initially disagreed with each other -- diagnosed first as
+the familiar intra-session drift and "fixed" by computing both in a
+*single* SQL execution (one `filtered` CTE, two aggregates over the same
+read, so both numbers reflect one atomic snapshot -- see
+`sql/consolidated_trial_balance.sql`'s comment header for why a lower
+bound on `accountingdate` alone isn't enough). That eliminated the
+query-to-query race, but 24 (account, entity) combos *still* failed to
+reconcile. Every one of the 24 was explained by re-fetching August's
+closing fresh (same single-query method, `accountingdate < 2026-09-01`)
+and diffing it against the currently-stored August closing: the fresh
+number differed from the stored one by exactly the validation gap, for
+all 24 keys, no exceptions. August itself had moved.
+
+**Root cause, confirmed at the line level.** `hb_catalog.db_bronze_d365.
+generaljournalentry` has a real, populated `createddatetime` column (a
+"row created in the source system" audit timestamp, distinct from
+`accountingdate`, the user-chosen posting date). Note:
+`generaljournalaccountentry.createddatetime` is a dead sentinel
+(`1900-01-01` on every row seen) -- it is `generaljournalentry.
+createddatetime` (the parent journal header) that carries the real
+audit trail. Querying account 1122012 ("Inter Company Receivable - HB UK
+Holding Co. Ltd.") / entity HBDM directly: eight lines with
+`accountingdate = 2026-08-31` all show `createddatetime =
+2026-09-16T08:15:43Z` -- created two days *after* our August tb was
+published on 2026-09-14. These are genuine backdated entries (an
+intercompany settlement/clearing batch, by the look of the affected
+accounts -- see below), not a query bug, not IsDelete/CLG artifacts, and
+not the previously-documented HBCB/HBUK/HBFR control-total exceptions
+(those three are excluded from this validation as already-known and
+already-simulated-adjusted).
+
+**Scope of the August drift**: exactly 24 (account, entity) keys, all
+intercompany-clearing-shaped pairs across a handful of ledgers (HBDM,
+HBUK, HBDS, HBFR) -- receivable/payable mirrors (1122xxx/2112xxx),
+cost-of-goods/inventory clearing pairs (1131xxx/2232xxx/5110xxx). Every
+key's August delta, once corrected, exactly closed the September
+validation gap for that key (verified: re-running Opening + Dr - Cr =
+Closing across all 1,730 non-adjustment combos after the fix produced
+**0 failures**, down from 24).
+
+**Fix applied**: re-fetched August 2026 in full (same single-query,
+`accountingdate < 2026-09-01`, all 1,729 (account, entity) rows, not
+just the 24 known-drifted ones, in case there were others -- there
+weren't), re-applied the same three simulated adjustments
+(HBCB/HBUK/HBFR on 3141001, same script, same order, same dynamic
+sizing), and republished `tb/2026-08` (`if_version`-pinned, v16 -> v17).
+September's `tb`, `movement`, `currencytb`, and `currencymovement` were
+then rebuilt from a fresh combined fetch (closing + movement computed in
+one query execution, extended to also carry `transactioncurrencyamount`
+and currency code so `currencytb`/`currencymovement` came from the exact
+same atomic read as `tb`/`movement` -- eliminating the cross-collection
+staleness that a separate later fetch would reintroduce) and pushed
+(`tb` v20->21, `movement` v13->14, `currencytb` v15->16,
+`currencymovement` v14->15). `tb/index`'s `generatedAt` was updated for
+both `2026-08` and `2026-09`.
+
+**Methodology change going forward -- read before the next daily sync:**
+whenever this routine needs both a *closing* balance and a *movement*
+(Dr/Cr) figure for the same period, or a cross-check between two
+collections (e.g. `tb` vs `currencytb`), compute all of them **in one
+SQL query execution** (one `filtered` CTE, multiple `SUM(CASE WHEN ...)`
+aggregates over the same read) rather than issuing separate queries and
+trusting them to agree -- two separate `execute_sql_read_only` calls,
+even seconds apart, are NOT guaranteed to see the same snapshot of a
+live, actively-posted-to bronze table. This was previously worked around
+by fetching "fast" or "tight window"; a single combined query removes
+the race entirely rather than narrowing it.
+
+**Open follow-up, not yet built**: `gje.createddatetime` (real,
+populated) is a much cheaper way to catch this class of drift than a
+full historical re-fetch and a 1,730-key reconciliation. A lightweight
+nightly check --
+`SELECT ... FROM generaljournalentry WHERE createddatetime >=
+current_date() - INTERVAL 30 DAYS AND accountingdate < <first day of the
+current open period>` -- would surface exactly this kind of backdated
+posting into an already-published period within a day of it happening,
+before it has to be caught by a full reconciliation days later. Not
+implemented yet (this firing ran out of scope for it); the next
+person/session picking this up should consider adding it as an
+additional daily-sync step, run against every already-published period,
+not just the immediately-prior one.
