@@ -1439,6 +1439,91 @@ person/session picking this up should consider adding it as an
 additional daily-sync step, run against every already-published period,
 not just the immediately-prior one.
 
+## 2026-09-18: Vendor Balance / Customer Balance refreshed for the first time since the 2026-09-11 backfill
+
+The 2026-09-11 backfill (see that heading above) has never been touched by
+the daily refresh procedure -- `vendor`/`customer` are not part of the
+four-collection daily sync (`tb`/`movement`/`currencytb`/`currencymovement`),
+so they'd been sitting on data as of 2026-09-10/11 for a full week while
+FY2026 P9 kept accumulating real AP/AR activity, and per this doc's
+well-established backdating pattern, August had every reason to have moved
+too.
+
+**Approach used -- targeted refresh, not a full-history rebuild.** A quick
+count confirmed the two-month movement window is tiny (543 vendor-balance
+rows, 588 vendor-currency rows, 169 customer-balance rows, 205
+customer-currency rows for Aug+Sep combined, all comfortably one page), so
+rather than re-fetching all of 2019-01 through 2026-09 again,
+`sql/vendor_balance.sql` / `sql/customer_balance.sql` /
+`_by_currency` variants were each run ONCE with `{{RANGE_START}} =
+2026-08-01`, `{{RANGE_END_EXCLUSIVE}} = 2026-10-01` (both months in a single
+query execution per grain, per this doc's "fetch related things together"
+rule), and forward-summed on top of the currently-stored **2026-07**
+balance as the seed (one already-settled period back from the two being
+refreshed) -- the same forward-sum arithmetic
+`build_party_balance_periods.py` uses, just seeded from an existing
+balance instead of from zero at ledger inception. This is a one-off
+adaptation script (`scripts` directory unchanged), not a permanent
+replacement for the full-history scripts.
+
+**Validated against direct Databricks queries before trusting the
+forward-sum, not just assumed correct**: spot-checked three flagged
+(entity, account) keys with a full-history-to-date cumulative query run
+directly against `vendtrans`/`custtrans` (no forward-summing) --
+HBUK/V000032 (a large swing), HBDM/V000015 (dropped to zero), and
+HBDM/C000004 (a large customer swing) -- all three matched the forward-summed
+September figure to the cent. The swings themselves are genuine: e.g.
+HBUK/V000032's real August net movement was -48,728,629.90 (accounting) /
+-65,999,886.25 (reporting) on its own -- a large number for one vendor in
+one month, but confirmed real, not a join fan-out (checked `vendtable` for
+that vendor/company: exactly one master record, no duplicate-casing rows
+to double-count).
+
+**What was found (stored vs. freshly computed), before pushing:**
+
+| Grain | Period | Stored rows | Computed rows | Added | Removed | Changed | Total abs $ drift |
+|---|---|---:|---:|---:|---:|---:|---:|
+| vendor balance | 2026-08 | 233 | 233 | 0 | 0 | 48 | $162.3M acc / $140.2M rep |
+| vendor balance | 2026-09 | 265 | 236 | 22 | 51 | 63 | $183.3M acc / $150.2M rep |
+| vendor currency | 2026-08 | 466 | 467 | 1 | 0 | 18 | $160.7M |
+| vendor currency | 2026-09 | 499 | 474 | 23 | 48 | 61 | $171.0M |
+| customer balance | 2026-08 | 145 | 145 | 0 | 0 | 6 | $239.1M acc / $67.3M rep |
+| customer balance | 2026-09 | 146 | 148 | 2 | 0 | 42 | $256.8M acc / $83.6M rep |
+| customer currency | 2026-08 | 275 | 276 | 1 | 0 | 11 | $240.9M |
+| customer currency | 2026-09 | 277 | 280 | 3 | 0 | 53 | $257.1M |
+
+September moved more than August in every grain (expected -- it's the
+still-open current period accumulating the most new activity, on top of
+carrying forward whatever else changed in August). The largest single
+driver was HBDM/C000004 (a customer intercompany account) swinging from
+-$104.4M to +$132.7M reporting-currency-equivalent -- a genuine ~$237M
+correction, confirmed against the direct cumulative query. Several HBUK
+vendor accounts (intercompany-shaped, V000032/V000151/V000036/V000034/etc.)
+also moved by tens of millions each, consistent with this being the same
+kind of intercompany settlement/backdating activity already documented
+repeatedly above for `tb`/`intercompany`.
+
+**Pushed**: one atomic 12-write `batch` (both period docs + both shard
+docs, balance and currency grain, for both `vendor` and `customer`,
+2026-08 and 2026-09), every entry `if_version`-pinned to the version read
+moments before
+(`vendor/2026-08` v2->v3, `vendor/2026-09` v3->v4, `customer/2026-08`
+v2->v3, `customer/2026-09` v3->v4, all eight shard/currency-shard docs
+v1->v2 or v2->v3 as applicable). All four collections still fit in exactly
+one shard and one currency-shard per period (largest, vendor currency
+Sept, is ~76KB -- nowhere near the ~200KB per-document guidance this repo
+uses elsewhere), so no new sharding logic was needed.
+
+**Not done, left for a future pass**: a full-history (2019-01 onward)
+re-verification of `vendor`/`customer` -- this refresh only touched
+2026-08/2026-09 per the task's minimum bar, seeded from the currently
+stored 2026-07 balance, which was trusted as settled rather than
+independently re-derived. If `vendor`/`customer` are added to the daily
+four-collection sync going forward (recommended, given they've now
+independently confirmed the same backdating pattern `tb` already has),
+that trust assumption goes away since each day's sync would only need to
+carry one month's seed forward from the day before.
+
 ## 2026-09-18 daily sync: `intercompany` full-history rebuild only
 
 Scoped strictly to step 5 of the daily procedure -- `tb`, `movement`,
