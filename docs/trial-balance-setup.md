@@ -1872,5 +1872,43 @@ Customer Balance, `customerAging` was pushed once as an initial snapshot
 (`customerAging/current`, 3 shards) and is not yet part of either the old
 daily or new intraday createddatetime-scoped routine. Since it's a live
 open-items snapshot rather than a period-close figure, it likely needs
-refreshing at least daily (ideally every sync) to stay current — flagged
+refreshing at least daily (ideally every sync) to stay current -- flagged
 here as the same kind of open follow-up already noted for vendor/customer.
+
+## 2026-09-19: Customer Aging -- exclude Intercompany/Influencers/Internal
+Request Orders, aging tab only
+
+Report-owner follow-up on the tab above, same day: exclude Intercompany,
+Influencers, and Internal Request Orders from the aging view entirely --
+these aren't third-party trade receivables an AR aging review cares about.
+Clarified mid-request that Intercompany detection can't rely on the
+`ltregion` tag alone ("any customer code starts with C is intercompany"),
+and clarified again that the exclusion applies **only to this aging tab**
+-- Customer Balance, Vendor Balance, and every other tab/collection in
+this report are untouched, by design (each collection is built from its
+own SQL file with its own filter set; no shared filtering layer exists to
+accidentally leak this change into).
+
+**Verified live before encoding the C-prefix rule**: 294 customer accounts
+across the master have an `accountnum` starting with "C". Of those, 271
+were already tagged `ltregion = 'Intercompany'`, but 17 sat at
+"(No Region)", 5 at "E-Commerce", and 1 at "Staff Sales" -- meaning the
+region tag alone would have silently kept 23 intercompany accounts in the
+aging view. Applied both signals as an OR (region match OR accountnum
+starts with "C"), added to `sql/customer_aging.sql`'s `filtered` CTE.
+
+**Effect on the data**: 1,603 groups / $721,498,441 (reporting currency)
+before -> **664 groups / $79,540,294** after, across 5 remaining regions
+(Europe $35,893,752.73 / North America $23,127,277.10 / MEASAT
+$10,780,597.17 / APAC $5,378,607.24 / E-Commerce $4,360,059.80). Zero
+C-prefixed accounts remain in the filtered set (checked programmatically
+against the re-fetched result).
+
+Re-fetched, rebuilt with `scripts/build_customer_aging.py` (now 1 shard
+instead of 3, since fewer rows), and pushed to the `customerAging`
+collection as an atomic batch (`customerAging/current` -> version 2,
+`shards/0` replaced -> version 2, `shards/1` and `shards/2` deleted since
+they're no longer needed at this row count). No change to
+`report/consolidated-trial-balance.html` was needed -- the Aging tab reads
+whatever is in the `customerAging` collection at render time, so the live
+artifact picked up the filtered data immediately without a republish.

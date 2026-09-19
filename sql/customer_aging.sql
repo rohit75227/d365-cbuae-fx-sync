@@ -47,10 +47,22 @@
 -- live 2026-09-19, ~58 of several hundred customers have it NULL, mapped to
 -- "(No Region)" here rather than dropped).
 --
+-- Report-owner request (2026-09-19): exclude Intercompany, Influencers, and
+-- Internal Request Orders entirely -- these aren't third-party trade
+-- receivables an AR aging review cares about. Intercompany is excluded by
+-- TWO rules, not just the region tag: the report owner clarified that any
+-- customer account starting with "C" is intercompany regardless of what
+-- `ltregion` says -- checked live: 294 customers have an accountnum
+-- starting with "C", of which 271 are already tagged region=Intercompany,
+-- but 17 sit at "(No Region)" and 6 at other regions (E-Commerce/Staff
+-- Sales) despite being intercompany by code -- the region tag alone would
+-- have missed those. Both rules are applied (region match OR
+-- accountnum-starts-with-C) so either signal is enough to exclude a row.
+--
 -- Grain: one row per (legal_entity, customer_account, due_date) -- invoices
--- sharing a customer+due-date are summed together (1,605 combos as of
--- 2026-09-19, comfortably one page -- no pagination needed, unlike every
--- other query in this repo).
+-- sharing a customer+due-date are summed together (1,605 combos before
+-- this exclusion, as of 2026-09-19, comfortably one page -- no pagination
+-- needed, unlike every other query in this repo).
 -- ============================================================================
 
 WITH filtered AS (
@@ -72,6 +84,8 @@ WITH filtered AS (
       AND LOWER(ct.dataareaid) NOT LIKE 'ky%'
       AND ct.closed < TIMESTAMP'1990-01-01'
       AND ct.invoice IS NOT NULL AND ct.invoice != ''
+      AND COALESCE(cd.ltregion, '(No Region)') NOT IN ('Intercompany', 'Influencers', 'Internal Request Orders')
+      AND ct.accountnum NOT LIKE 'C%'
 ),
 grouped AS (
     SELECT
