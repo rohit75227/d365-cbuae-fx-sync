@@ -1674,3 +1674,28 @@ old daily or the new intraday procedure** -- they were refreshed once
 this session (see the entry above) as a one-off catch-up, but adding
 them to the recurring procedure (both old and new) is still open follow-up
 work, not yet done.
+
+## 2026-09-19: First two intraday firings under the new 4x/day cadence
+
+**08:07 UTC firing (~12:07pm UAE):** ran the createddatetime-scoped scan
+(30-day window). No new activity in any previously-flagged older period
+(2025-12 through 2026-06, 2026-08 all unchanged since the prior day's
+full pass) -- confirms yesterday's fixes held. Only `2026-09` (the
+current, still-open period) had moved, via ordinary same-day GL
+accumulation (36,011 -> 36,026 lines in the 30-day window). Recomputed
+September's closing via a single combined query (3,317 rows across 2
+pages, same account/entity/txn_ccy grain as the 2026-09-18 fixes) and
+found **88 (account, entity) cells drifted** by up to ~$1.06M each --
+almost entirely HBDS-side accounts (`1131022`/`2232001`/`2232002` and
+related clearing/cash pairs), consistent with continuous
+intercompany-settlement-shaped activity already documented repeatedly in
+this file. Patched just those 88 cells in `tb/2026-09`'s shard
+(version 21->22), updated the period doc's and `tb/index`'s
+`generatedAt`. `movement`/`currencytb`/`currencymovement` for the same
+period were handed to a background workstream to rebuild from the same
+underlying data (see below if a separate entry for that appears).
+
+This is the first live proof the new cadence does what it was built
+for: a targeted, few-minute check every ~4 hours catches same-day
+intraday drift that the old once-a-day cadence would have let
+accumulate for up to 24 hours before catching.
