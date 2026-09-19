@@ -1675,6 +1675,61 @@ this session (see the entry above) as a one-off catch-up, but adding
 them to the recurring procedure (both old and new) is still open follow-up
 work, not yet done.
 
+## 2026-09-19: `movement`/`currencytb`/`currencymovement` brought current for 2026-09 after the tb drift fix
+
+A parallel workstream fixed ordinary current-period drift in `tb/2026-09`
+(88 (account, entity) cells stale by up to ~$1M each, mostly HBDS-side
+clearing/cash accounts, `tb` now at version 22). `movement`, `currencytb`,
+and `currencymovement` do not auto-update from a `tb` fix, so this session
+brought all three current for the same period per step 3 of the "Daily
+refresh" procedure above.
+
+**Method**: one combined SQL query execution (per the createddatetime-scoped
+methodology above -- never separate queries), grain (mainaccountid,
+entity_code, txn_ccy), computing cumulative closing accounting/reporting/
+transaction-currency amounts (BS since inception, PL FYTD from 2026-01-01,
+both through 2026-10-01 exclusive) plus September-only debit/credit splits
+on all three currency bases in the same read. 3,317 rows, returned whole
+(not truncated, no pagination needed for this single-period grain).
+`movement` (account, entity) was derived by summing that grain's Sept
+debit/credit splits across txn_ccy; `currencytb`/`currencymovement` used
+the grain directly.
+
+**What changed, diffed against the currently-stored documents before
+pushing:**
+
+| Collection | Stored rows | Fresh rows | Changed | Shards |
+|---|---:|---:|---:|---:|
+| movement/2026-09 | 438 | 438 | 96 | 1 (unchanged) |
+| currencytb/2026-09 (cells) | 2,722 | 2,722 | 118 | 2 (unchanged) |
+| currencymovement/2026-09 | 600 | 601 | 575 | 1 (unchanged) |
+
+All changes were ordinary September GL activity landing since the last
+sync (2026-09-18) -- same recurring pattern as every prior drift finding in
+this doc, no new rows added/removed beyond one genuinely new
+`currencymovement` combo (`1211005`/HBDS/AED). `currencymovement`'s high
+changed-count is mostly `debitTransaction`/`creditTransaction` fields that
+were stored as `null` on most rows (an apparent gap from an earlier build)
+now populated correctly from this combined query's `transactioncurrencyamount`
+sums, on top of the ordinary dollar drift.
+
+**Cross-check**: summed `currencytb`'s fresh 2026-09 accounting/reporting
+values across currency per (account, entity) and compared against `tb`'s
+now-corrected 2026-09 values (1,441 combos present in both) -- exact match
+except the three simulated-adjustment cells (HBCB/HBUK/HBFR on `3141001`,
+which `tb` carries and `currencytb` correctly never does) and the
+already-documented HBBV reporting-currency-fallback inconsistency
+(`2111003`/`6510001`, ~$3,785, `currencytb`'s unconditional fallback vs.
+`tb`'s conditional one -- see the 2026-09-09 daily sync entry above, not
+fixed here, still out of scope for this pass).
+
+Pushed via one atomic 7-write `ArtifactData` batch, every entry
+`if_version`-pinned to the version read moments before: `movement/2026-09`
+v14->15 (shard v14->15), `currencytb/2026-09` v16->17 (both shards
+v16->17), `currencymovement/2026-09` v15->16 (shard v15->16). `tb`,
+`intercompany`, `vendor`, and `customer` were not touched (owned by other
+workstreams / out of scope for this pass).
+
 ## 2026-09-19: First two intraday firings under the new 4x/day cadence
 
 **08:07 UTC firing (~12:07pm UAE):** ran the createddatetime-scoped scan
