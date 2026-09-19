@@ -713,6 +713,15 @@
   th.col-total{ border-left:2px solid rgba(255,255,255,.25); }
   td.na, th.na-note{ color:var(--text-dim); font-style:italic; font-weight:400; }
 
+  /* Customer Aging: region row expands in place, with its customer rows
+     inserted directly underneath in the same table (no separate view). */
+  .aging-region-toggle{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700; text-decoration:none; }
+  .aging-region-toggle .aging-caret{ display:inline-block; width:10px; text-align:center; font-size:10px; color:var(--text-dim); }
+  tr.aging-subrow td{ background-color:var(--surface-2); font-size:12px; color:var(--text-dim); }
+  tr.aging-subrow td.col-left{ padding-left:34px; }
+  tr.aging-subrow:hover td{ background-color:var(--total-row-bg); }
+  .aging-subrow-entity{ opacity:.7; }
+
   tfoot td{
     position:sticky;
     bottom:0;
@@ -1149,7 +1158,6 @@
   </div>
   <main>
     <div id="aging-banner-host"></div>
-    <div id="aging-breadcrumb-host"></div>
     <div id="aging-report-host">
       <div class="empty-state">
         <p class="display">Loading</p>
@@ -1162,7 +1170,7 @@
       <span>Amounts are each invoice's currently-open remaining balance (original amount less everything settled against it to date) &mdash; picking a past date changes which bucket an invoice falls into, but does not reconstruct what was actually open as of that past date (a payment made since then would still reduce the amount shown)</span>
       <span>Shown in Reporting currency (USD) only &mdash; a region or the Grand Total spans customers in companies with different local accounting currencies, which isn't meaningful to sum together</span>
       <span>Region comes from each customer's master record; customers with none set are grouped under "(No Region)"</span>
-      <span>Click a region to drill into its customers; use the back link to return to All Regions</span>
+      <span>Click a region to expand its customers inline; click it again to collapse</span>
     </footer>
   </main>
 </div>
@@ -4097,14 +4105,13 @@
   // due date), never on anything the server needs to recompute.
   // ========================================================================
   var Aging = (function(){
-    var state = { asOfDate: null, drillRegion: null, sortKey: null, sortDir: 'desc' };
+    var state = { asOfDate: null, expandedRegions: {}, sortKey: null, sortDir: 'desc' };
     var allRows = null;
 
     var statusDot = document.getElementById('aging-status-dot');
     var statusText = document.getElementById('aging-status-text');
     var reportHost = document.getElementById('aging-report-host');
     var bannerHost = document.getElementById('aging-banner-host');
-    var breadcrumbHost = document.getElementById('aging-breadcrumb-host');
     var notesHost = document.getElementById('aging-notes-host');
     var asOfDateInput = document.getElementById('aging-as-of-date');
     createDatePicker(asOfDateInput);
@@ -4152,7 +4159,6 @@
 
     function renderEmpty(title, body){
       notesHost.hidden = true;
-      breadcrumbHost.innerHTML = '';
       bannerHost.innerHTML = '';
       reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
       state.lastExport = null;
@@ -4206,8 +4212,12 @@
       }).join('');
     }
 
+    // Each region row expands in place -- clicking it inserts that
+    // region's customer rows directly underneath, in the same table,
+    // instead of swapping the whole panel to a separate customer view
+    // (the original drill-down design navigated away from the region
+    // table entirely, which read as "opening a new page").
     function renderRegionTable(aggRows, asOfDate){
-      breadcrumbHost.innerHTML = '';
       aggRows.sort(function(a, b){ return b.total - a.total; });
       var withVals = withSortValues(aggRows, function(r){
         var v = {}; BUCKETS.forEach(function(b){ v[b.key] = r[b.key]; }); v.total = r.total; return v;
@@ -4225,11 +4235,25 @@
         grand.total += r.total;
         var ft = fmtAmount(r.total);
         exportRows.push([r.region].concat(BUCKETS.map(function(b){ return r[b.key]; })).concat([r.total]));
-        return '<tr>' +
-          '<td class="col-left"><button type="button" class="banner-link" data-region="' + escapeAttr(r.region) + '">' + escapeHtml(r.region) + '</button></td>' +
+        var expanded = !!state.expandedRegions[r.region];
+        var caret = expanded ? '▾' : '▸';
+        var regionRow = '<tr>' +
+          '<td class="col-left"><button type="button" class="banner-link aging-region-toggle" data-region="' + escapeAttr(r.region) + '"><span class="aging-caret">' + caret + '</span>' + escapeHtml(r.region) + '</button></td>' +
           bucketCells(r) +
           '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>' +
           '</tr>';
+        if (!expanded) return regionRow;
+        var custAgg = computeCustomerAgg(allRows, asOfDate, r.region);
+        custAgg.sort(function(a, b){ return b.total - a.total; });
+        var custRows = custAgg.map(function(c){
+          var cf = fmtAmount(c.total);
+          return '<tr class="aging-subrow">' +
+            '<td class="col-left">' + escapeHtml(c.customerAccount) + (c.customerName ? ' - ' + escapeHtml(c.customerName) : '') + ' <span class="aging-subrow-entity">(' + escapeHtml(c.legalEntity) + ')</span></td>' +
+            bucketCells(c) +
+            '<td class="col-total ' + cf.cls + '">' + cf.text + '</td>' +
+            '</tr>';
+        }).join('');
+        return regionRow + custRows;
       }).join('');
       exportRows.push(['Grand Total'].concat(BUCKETS.map(function(b){ return grand[b.key]; })).concat([grand.total]));
       var fgt = fmtAmount(grand.total);
@@ -4247,66 +4271,10 @@
       exportBtn.disabled = false;
     }
 
-    function renderCustomerTable(aggRows, region, asOfDate){
-      breadcrumbHost.innerHTML =
-        '<button type="button" class="btn-toggle" id="aging-back-btn">&larr; All Regions</button>' +
-        '<span class="eyebrow" style="margin-left:10px;">' + escapeHtml(region) + '</span>';
-
-      aggRows.sort(function(a, b){ return b.total - a.total; });
-      var withVals = withSortValues(aggRows, function(r){
-        var v = {}; BUCKETS.forEach(function(b){ v[b.key] = r[b.key]; }); v.total = r.total; return v;
-      });
-      var sorted = applySort(state, withVals);
-
-      var thead = '<tr><th class="col-company">Company</th><th class="col-left">Customer Account</th><th class="col-left">Customer Name</th>' +
-        BUCKETS.map(function(b){ return thSort(state, b.key, b.label); }).join('') +
-        thSort(state, 'total', 'Total', 'col-total') + '</tr>';
-
-      var exportRows = [['Company', 'Customer Account', 'Customer Name'].concat(BUCKETS.map(function(b){ return b.label; })).concat(['Total (Reporting, USD)'])];
-      var grand = emptyBucketRow();
-      var bodyRows = sorted.map(function(r){
-        BUCKETS.forEach(function(b){ grand[b.key] += r[b.key]; });
-        grand.total += r.total;
-        var ft = fmtAmount(r.total);
-        exportRows.push([r.legalEntity, r.customerAccount, r.customerName || ''].concat(BUCKETS.map(function(b){ return r[b.key]; })).concat([r.total]));
-        return '<tr>' +
-          '<td class="col-company">' + escapeHtml(r.legalEntity) + '</td>' +
-          '<td class="col-left">' + escapeHtml(r.customerAccount) + '</td>' +
-          '<td class="col-left">' + escapeHtml(r.customerName || '') + '</td>' +
-          bucketCells(r) +
-          '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>' +
-          '</tr>';
-      }).join('');
-      exportRows.push(['Grand Total', '', ''].concat(BUCKETS.map(function(b){ return grand[b.key]; })).concat([grand.total]));
-      var fgt = fmtAmount(grand.total);
-      var footRow = '<td class="col-company">Grand Total</td><td class="col-left"></td><td class="col-left"></td>' + bucketCells(grand) + '<td class="col-total ' + fgt.cls + '">' + fgt.text + '</td>';
-
-      reportHost.innerHTML =
-        '<div class="table-card"><div class="table-scroll"><table>' +
-          '<thead>' + thead + '</thead>' +
-          '<tbody>' + bodyRows + '</tbody>' +
-          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
-        '</table></div></div>';
-
-      renderBanners(bannerHost, []);
-      state.lastExport = { rows: exportRows, filename: 'CustomerAgingByCustomer_' + region + '_' + asOfDate + '.xlsx' };
-      exportBtn.disabled = false;
-    }
-
     function render(){
       if (!state.asOfDate || !allRows) return;
-      if (state.drillRegion){
-        var custAgg = computeCustomerAgg(allRows, state.asOfDate, state.drillRegion);
-        if (!custAgg.length){
-          renderEmpty('No open invoices', 'No open invoices for "' + escapeHtml(state.drillRegion) + '" as of ' + state.asOfDate + '.');
-          setStatus('No matches', false);
-          return;
-        }
-        renderCustomerTable(custAgg, state.drillRegion, state.asOfDate);
-      } else {
-        var regionAgg = computeRegionAgg(allRows, state.asOfDate);
-        renderRegionTable(regionAgg, state.asOfDate);
-      }
+      var regionAgg = computeRegionAgg(allRows, state.asOfDate);
+      renderRegionTable(regionAgg, state.asOfDate);
       notesHost.hidden = false;
       setStatus('As of ' + state.asOfDate + ' · ' + allRows.length + ' open invoice group' + (allRows.length === 1 ? '' : 's'), false);
     }
@@ -4315,14 +4283,9 @@
     reportHost.addEventListener('click', function(e){
       var btn = e.target.closest('button[data-region]');
       if (!btn) return;
-      state.drillRegion = btn.getAttribute('data-region');
-      state.sortKey = null;
-      render();
-    });
-    breadcrumbHost.addEventListener('click', function(e){
-      if (!e.target.closest('#aging-back-btn')) return;
-      state.drillRegion = null;
-      state.sortKey = null;
+      var region = btn.getAttribute('data-region');
+      if (state.expandedRegions[region]) delete state.expandedRegions[region];
+      else state.expandedRegions[region] = true;
       render();
     });
     asOfDateInput.addEventListener('change', function(){ if (asOfDateInput.value){ state.asOfDate = asOfDateInput.value; render(); } });
