@@ -421,6 +421,20 @@ amounts are a third, unconverted currency dimension.
   (`shardCount` from one, `currencyShardCount` from the other), it reads
   back the existing period file (if present) and merges rather than
   overwriting, so run order between the two grains doesn't matter.
+- `sql/customer_aging.sql` — open AR items (`custtrans` rows still open as
+  of now, per `closed`'s dead-sentinel-timestamp convention — see the
+  2026-09-19 dated entry below for how that was confirmed) grouped by
+  (legal entity, customer, due date), joined to `custtable`/`dirpartytable`
+  for customer name/group and to `custtable.ltregion` for Region. Feeds the
+  Customer Aging tab / `customerAging` collection. **Not period-scoped**
+  unlike every other query here — it's a live open-items snapshot,
+  re-fetched in full on every sync rather than diffed against a stored
+  prior period.
+- `scripts/build_customer_aging.py` — turns that one fetch into the
+  `customerAging` doc + shards (`{rows: [...]}`, one row per (entity,
+  customer, due date) group) ready for `write_db`. No forward-summing,
+  no diffing against a prior snapshot — it's a full rebuild every time by
+  design, since "open as of now" has no meaningful incremental update.
 
 ## Daily refresh
 
@@ -1777,3 +1791,86 @@ This is the first live proof the new cadence does what it was built
 for: a targeted, few-minute check every ~4 hours catches same-day
 intraday drift that the old once-a-day cadence would have let
 accumulate for up to 24 hours before catching.
+
+## 2026-09-19: new "Customer Aging" tab (by Region, drill down to customer)
+
+Report-owner request: an aging tab bucketed by due date (0-30/31-60/
+61-90/91-180/180+), with customer Region from the customer master, shown
+by Region first with drill-down to customer level. This needed a genuinely
+new data pipeline, not just a UI change on top of `vendor`/`customer`'s
+existing running-balance data -- aging needs individual open items with
+their own due dates, not a single net balance per customer.
+
+**Three schema questions answered by checking live data before writing
+any query** (see `sql/customer_aging.sql`'s header comment for the full
+detail, this is the summary):
+
+1. **"Open" detection**: `custtrans.closed` is never SQL NULL -- it carries
+   a dead-sentinel timestamp (`1900-01-01`) for a still-open transaction,
+   the exact same sentinel-instead-of-NULL pattern this doc already
+   documented for `generaljournalaccountentry.createddatetime`. Confirmed
+   live: of 5,194,141 total `custtrans` rows, 52,781 sit at that sentinel
+   and 5,141,360 carry a real close date ranging 2019-01-31 through today.
+2. **Which rows count as an "invoice"**: only rows with a non-blank
+   `invoice` field. Checked all 7 `transtype` values present among
+   currently-open rows -- transtypes 15/12/36 never carry an invoice
+   number and, for transtype 36 specifically, sum to $6.8B of *gross*
+   remaining amount that nets to only $155M (heavily self-cancelling),
+   vs. transtype 2 (Invoice, 48,848 rows, ALL with an invoice number)
+   netting to $1.22B with no such cancellation. Concluded 15/12/36 are
+   clearing/write-off/on-account postings to the customer subledger, not
+   individually dated invoices, and excluded them -- an aging report
+   buckets dated invoices, not clearing entries.
+3. **Remaining-amount sign**: `amountmst - settleamountmst` (subtract,
+   not add) -- verified by summing `ABS(amount - settle)` over already-
+   CLOSED transactions (~$909M residual across 5.14M rows, small relative
+   to the ~$68B `ABS(amount + settle)` would have given) and confirming
+   the small-residual side is the "should be ~0 once closed" side.
+4. **Region**: `custtable.ltregion`, an existing custom field (values like
+   "Europe", "North America", "MEASAT", "Intercompany", "E-Commerce" --
+   confirmed live, 15 distinct values across the customer master, ~58 of
+   several hundred customers unset, mapped to "(No Region)" rather than
+   dropped).
+
+**Grain and volume**: grouped server-side by (legal entity, customer
+account, due date) -- 44,804 raw open+invoiced `custtrans` rows collapse
+to just **1,603 groups** (most invoices for the same customer share a due
+date), comfortably one page, no pagination needed unlike every other
+query in this repo. Total remaining across all 1,603 groups: $721,498,441
+(reporting currency) -- Intercompany-region customers alone account for
+$543.9M of that (~75%), consistent with the intercompany-clearing-shaped
+activity this doc has documented repeatedly for `tb`/`intercompany`.
+
+**Design decision: bucket assignment is entirely client-side, not baked
+into the stored data.** The `customerAging` collection stores each
+group's raw due date and remaining amount only -- no bucket field. The
+report's "As on Date" picker (same in-page calendar as Vendor/Customer
+Balance) recomputes `asOfDate - dueDate` and re-buckets on every date
+change, entirely in the browser, against one cached fetch (`allRows`,
+loaded once per page load, not re-fetched per date change). This means:
+picking a different date changes which bucket an invoice falls into
+*without* needing a resync, but it does **not** reconstruct what was
+genuinely open as of a past date -- a payment made since then still
+reduces the amount shown, same limitation already documented for Vendor/
+Customer Balance's own "As on Date" picker, stated explicitly in this
+tab's footer notes so it isn't mistaken for true historical aging.
+
+**UI**: region-level table first (Region, six bucket columns including a
+"Not Due" bucket beyond the five the report owner named, so nothing is
+silently excluded from the total -- an invoice not yet past due still
+needs a place to live), Grand Total row, sortable amount columns (same
+`thSort`/`applySort` helpers every other tab uses). Clicking a region name
+drills into a customer-level table scoped to that region (Company /
+Customer Account / Customer Name + the same six buckets), with a
+"← All Regions" breadcrumb back link. Reporting currency (USD) only --
+summing a region or the Grand Total in local accounting currency would mix
+currencies across companies, the same anti-pattern this doc has flagged
+for every other cross-company total.
+
+**Not yet added to the daily/intraday sync procedure** -- like Vendor/
+Customer Balance, `customerAging` was pushed once as an initial snapshot
+(`customerAging/current`, 3 shards) and is not yet part of either the old
+daily or new intraday createddatetime-scoped routine. Since it's a live
+open-items snapshot rather than a period-close figure, it likely needs
+refreshing at least daily (ideally every sync) to stay current — flagged
+here as the same kind of open follow-up already noted for vendor/customer.

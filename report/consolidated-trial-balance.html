@@ -812,6 +812,7 @@
     <button type="button" data-view="intercompany" role="tab" aria-selected="false">Intercompany</button>
     <button type="button" data-view="vendor" role="tab" aria-selected="false">Vendor Balance</button>
     <button type="button" data-view="customer" role="tab" aria-selected="false">Customer Balance</button>
+    <button type="button" data-view="aging" role="tab" aria-selected="false">Customer Aging</button>
   </nav>
 </header>
 
@@ -1129,6 +1130,39 @@
       <span>Accounting &amp; Reporting shows each customer's balance in its company's local accounting currency and in USD reporting currency, side by side</span>
       <span>Transaction Currency shows one row per (customer, original posting currency) &mdash; a customer invoiced in more than one currency has more than one row; amounts are not converted and are not meant to be summed across currencies</span>
       <span>Company / Customer Group / Customer filters narrow the table without re-querying &mdash; only customers with a nonzero balance as of the selected date are listed</span>
+    </footer>
+  </main>
+</div>
+
+<!-- ============================== CUSTOMER AGING ============================== -->
+<div class="view-panel" id="panel-aging" hidden>
+  <div class="controls">
+    <div class="control-group">
+      <span class="eyebrow">As on Date</span>
+      <input type="date" class="date-input" id="aging-as-of-date" aria-label="Aging as on date">
+    </div>
+    <button type="button" class="btn-export" id="aging-export-btn" disabled>Export to Excel</button>
+    <div class="status-pill">
+      <span class="status-dot" id="aging-status-dot"></span>
+      <span id="aging-status-text">Connecting&hellip;</span>
+    </div>
+  </div>
+  <main>
+    <div id="aging-banner-host"></div>
+    <div id="aging-breadcrumb-host"></div>
+    <div id="aging-report-host">
+      <div class="empty-state">
+        <p class="display">Loading</p>
+        <p>Connecting to the report database&hellip;</p>
+      </div>
+    </div>
+    <footer class="notes" id="aging-notes-host" hidden>
+      <span class="wordmark">Huda Beauty</span>
+      <span>Aging buckets are computed from each open invoice's due date against the selected As on Date &mdash; 0-30/31-60/61-90/91-180/180+ are days PAST due; "Not Due" holds invoices whose due date hasn't arrived yet as of that date</span>
+      <span>Amounts are each invoice's currently-open remaining balance (original amount less everything settled against it to date) &mdash; picking a past date changes which bucket an invoice falls into, but does not reconstruct what was actually open as of that past date (a payment made since then would still reduce the amount shown)</span>
+      <span>Shown in Reporting currency (USD) only &mdash; a region or the Grand Total spans customers in companies with different local accounting currencies, which isn't meaningful to sum together</span>
+      <span>Region comes from each customer's master record; customers with none set are grouped under "(No Region)"</span>
+      <span>Click a region to drill into its customers; use the back link to return to All Regions</span>
     </footer>
   </main>
 </div>
@@ -1889,6 +1923,7 @@
     intercompany: document.getElementById('panel-intercompany'),
     vendor: document.getElementById('panel-vendor'),
     customer: document.getElementById('panel-customer'),
+    aging: document.getElementById('panel-aging'),
   };
   var initedViews = {};
   var pendingInits = []; // views requested before `index` was ready
@@ -1905,6 +1940,7 @@
     if (view === 'intercompany') Intercompany.init();
     if (view === 'vendor') Vendor.init();
     if (view === 'customer') Customer.init();
+    if (view === 'aging') Aging.init();
   }
 
   function flushPendingInits(){
@@ -4043,6 +4079,275 @@
         if (!state.asOfDate) state.asOfDate = latest.last;
         asOfDateInput.value = state.asOfDate;
         render();
+      },
+    };
+  })();
+
+  // ========================================================================
+  // CUSTOMER AGING view -- open AR items bucketed by days past due, rolled
+  // up by Region (customer master's `ltregion`) with drill-down to
+  // customer level. Backed by the "customerAging" collection (one row per
+  // (legal entity, customer account, due date) group of still-open
+  // invoices -- see sql/customer_aging.sql), which is NOT period-scoped:
+  // it's fetched ONCE per page load (loadShardedDoc('customerAging',
+  // 'current')) and cached in `allRows`, then every date change or
+  // region drill-down/back click just recomputes buckets from that same
+  // cached data client-side -- no re-fetch needed, since bucket
+  // assignment only depends on (today's picked date - each row's own
+  // due date), never on anything the server needs to recompute.
+  // ========================================================================
+  var Aging = (function(){
+    var state = { asOfDate: null, drillRegion: null, sortKey: null, sortDir: 'desc' };
+    var allRows = null;
+
+    var statusDot = document.getElementById('aging-status-dot');
+    var statusText = document.getElementById('aging-status-text');
+    var reportHost = document.getElementById('aging-report-host');
+    var bannerHost = document.getElementById('aging-banner-host');
+    var breadcrumbHost = document.getElementById('aging-breadcrumb-host');
+    var notesHost = document.getElementById('aging-notes-host');
+    var asOfDateInput = document.getElementById('aging-as-of-date');
+    createDatePicker(asOfDateInput);
+    var exportBtn = document.getElementById('aging-export-btn');
+
+    var BUCKETS = [
+      { key: 'notDue',   label: 'Not Due' },
+      { key: 'b0_30',    label: '0-30' },
+      { key: 'b31_60',   label: '31-60' },
+      { key: 'b61_90',   label: '61-90' },
+      { key: 'b91_180',  label: '91-180' },
+      { key: 'b180plus', label: '180+' },
+    ];
+
+    function pad2(n){ return n < 10 ? '0' + n : '' + n; }
+    function todayStr(){
+      var t = new Date();
+      return t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate());
+    }
+    function parseYmd(s){
+      var p = (s || '').split('-');
+      return { y: parseInt(p[0], 10), m: parseInt(p[1], 10), d: parseInt(p[2], 10) };
+    }
+    // asOfDate minus dueDate, in whole days -- both plain "YYYY-MM-DD"
+    // strings, compared as UTC calendar dates (no time-of-day / timezone
+    // involved, same as every other date field this report shows).
+    function daysPastDue(dueDate, asOfDate){
+      var d = parseYmd(dueDate), a = parseYmd(asOfDate);
+      return Math.round((Date.UTC(a.y, a.m - 1, a.d) - Date.UTC(d.y, d.m - 1, d.d)) / 86400000);
+    }
+    function bucketFor(dueDate, asOfDate){
+      var days = daysPastDue(dueDate, asOfDate);
+      if (days < 0) return 'notDue';
+      if (days <= 30) return 'b0_30';
+      if (days <= 60) return 'b31_60';
+      if (days <= 90) return 'b61_90';
+      if (days <= 180) return 'b91_180';
+      return 'b180plus';
+    }
+
+    function setStatus(text, stale){
+      statusText.textContent = text;
+      statusDot.classList.toggle('stale', !!stale);
+    }
+
+    function renderEmpty(title, body){
+      notesHost.hidden = true;
+      breadcrumbHost.innerHTML = '';
+      bannerHost.innerHTML = '';
+      reportHost.innerHTML = '<div class="empty-state"><p class="display">' + title + '</p><p>' + body + '</p></div>';
+      state.lastExport = null;
+      exportBtn.disabled = true;
+    }
+
+    function emptyBucketRow(){
+      var row = {};
+      BUCKETS.forEach(function(b){ row[b.key] = 0; });
+      row.total = 0;
+      return row;
+    }
+
+    function computeRegionAgg(rows, asOfDate){
+      var map = {};
+      rows.forEach(function(r){
+        var region = r.region || '(No Region)';
+        if (!map[region]){
+          map[region] = emptyBucketRow();
+          map[region].region = region;
+        }
+        var b = bucketFor(r.dueDate, asOfDate);
+        map[region][b] += r.remainingReporting;
+        map[region].total += r.remainingReporting;
+      });
+      return Object.keys(map).map(function(k){ return map[k]; });
+    }
+
+    function computeCustomerAgg(rows, asOfDate, region){
+      var map = {};
+      rows.forEach(function(r){
+        if ((r.region || '(No Region)') !== region) return;
+        var key = r.legalEntity + '|' + r.customerAccount;
+        if (!map[key]){
+          map[key] = emptyBucketRow();
+          map[key].legalEntity = r.legalEntity;
+          map[key].customerAccount = r.customerAccount;
+          map[key].customerName = r.customerName;
+        }
+        var b = bucketFor(r.dueDate, asOfDate);
+        map[key][b] += r.remainingReporting;
+        map[key].total += r.remainingReporting;
+      });
+      return Object.keys(map).map(function(k){ return map[k]; });
+    }
+
+    function bucketCells(row, cls){
+      return BUCKETS.map(function(b){
+        var f = fmtAmount(row[b.key]);
+        return '<td class="' + (cls || '') + f.cls + '">' + f.text + '</td>';
+      }).join('');
+    }
+
+    function renderRegionTable(aggRows, asOfDate){
+      breadcrumbHost.innerHTML = '';
+      aggRows.sort(function(a, b){ return b.total - a.total; });
+      var withVals = withSortValues(aggRows, function(r){
+        var v = {}; BUCKETS.forEach(function(b){ v[b.key] = r[b.key]; }); v.total = r.total; return v;
+      });
+      var sorted = applySort(state, withVals);
+
+      var thead = '<tr><th class="col-left">Region</th>' +
+        BUCKETS.map(function(b){ return thSort(state, b.key, b.label); }).join('') +
+        thSort(state, 'total', 'Total', 'col-total') + '</tr>';
+
+      var exportRows = [['Region'].concat(BUCKETS.map(function(b){ return b.label; })).concat(['Total (Reporting, USD)'])];
+      var grand = emptyBucketRow();
+      var bodyRows = sorted.map(function(r){
+        BUCKETS.forEach(function(b){ grand[b.key] += r[b.key]; });
+        grand.total += r.total;
+        var ft = fmtAmount(r.total);
+        exportRows.push([r.region].concat(BUCKETS.map(function(b){ return r[b.key]; })).concat([r.total]));
+        return '<tr>' +
+          '<td class="col-left"><button type="button" class="banner-link" data-region="' + escapeAttr(r.region) + '">' + escapeHtml(r.region) + '</button></td>' +
+          bucketCells(r) +
+          '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>' +
+          '</tr>';
+      }).join('');
+      exportRows.push(['Grand Total'].concat(BUCKETS.map(function(b){ return grand[b.key]; })).concat([grand.total]));
+      var fgt = fmtAmount(grand.total);
+      var footRow = '<td class="col-left">Grand Total</td>' + bucketCells(grand) + '<td class="col-total ' + fgt.cls + '">' + fgt.text + '</td>';
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+        '</table></div></div>';
+
+      renderBanners(bannerHost, []);
+      state.lastExport = { rows: exportRows, filename: 'CustomerAgingByRegion_' + asOfDate + '.xlsx' };
+      exportBtn.disabled = false;
+    }
+
+    function renderCustomerTable(aggRows, region, asOfDate){
+      breadcrumbHost.innerHTML =
+        '<button type="button" class="btn-toggle" id="aging-back-btn">&larr; All Regions</button>' +
+        '<span class="eyebrow" style="margin-left:10px;">' + escapeHtml(region) + '</span>';
+
+      aggRows.sort(function(a, b){ return b.total - a.total; });
+      var withVals = withSortValues(aggRows, function(r){
+        var v = {}; BUCKETS.forEach(function(b){ v[b.key] = r[b.key]; }); v.total = r.total; return v;
+      });
+      var sorted = applySort(state, withVals);
+
+      var thead = '<tr><th class="col-company">Company</th><th class="col-left">Customer Account</th><th class="col-left">Customer Name</th>' +
+        BUCKETS.map(function(b){ return thSort(state, b.key, b.label); }).join('') +
+        thSort(state, 'total', 'Total', 'col-total') + '</tr>';
+
+      var exportRows = [['Company', 'Customer Account', 'Customer Name'].concat(BUCKETS.map(function(b){ return b.label; })).concat(['Total (Reporting, USD)'])];
+      var grand = emptyBucketRow();
+      var bodyRows = sorted.map(function(r){
+        BUCKETS.forEach(function(b){ grand[b.key] += r[b.key]; });
+        grand.total += r.total;
+        var ft = fmtAmount(r.total);
+        exportRows.push([r.legalEntity, r.customerAccount, r.customerName || ''].concat(BUCKETS.map(function(b){ return r[b.key]; })).concat([r.total]));
+        return '<tr>' +
+          '<td class="col-company">' + escapeHtml(r.legalEntity) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerAccount) + '</td>' +
+          '<td class="col-left">' + escapeHtml(r.customerName || '') + '</td>' +
+          bucketCells(r) +
+          '<td class="col-total ' + ft.cls + '">' + ft.text + '</td>' +
+          '</tr>';
+      }).join('');
+      exportRows.push(['Grand Total', '', ''].concat(BUCKETS.map(function(b){ return grand[b.key]; })).concat([grand.total]));
+      var fgt = fmtAmount(grand.total);
+      var footRow = '<td class="col-company">Grand Total</td><td class="col-left"></td><td class="col-left"></td>' + bucketCells(grand) + '<td class="col-total ' + fgt.cls + '">' + fgt.text + '</td>';
+
+      reportHost.innerHTML =
+        '<div class="table-card"><div class="table-scroll"><table>' +
+          '<thead>' + thead + '</thead>' +
+          '<tbody>' + bodyRows + '</tbody>' +
+          '<tfoot><tr>' + footRow + '</tr></tfoot>' +
+        '</table></div></div>';
+
+      renderBanners(bannerHost, []);
+      state.lastExport = { rows: exportRows, filename: 'CustomerAgingByCustomer_' + region + '_' + asOfDate + '.xlsx' };
+      exportBtn.disabled = false;
+    }
+
+    function render(){
+      if (!state.asOfDate || !allRows) return;
+      if (state.drillRegion){
+        var custAgg = computeCustomerAgg(allRows, state.asOfDate, state.drillRegion);
+        if (!custAgg.length){
+          renderEmpty('No open invoices', 'No open invoices for "' + escapeHtml(state.drillRegion) + '" as of ' + state.asOfDate + '.');
+          setStatus('No matches', false);
+          return;
+        }
+        renderCustomerTable(custAgg, state.drillRegion, state.asOfDate);
+      } else {
+        var regionAgg = computeRegionAgg(allRows, state.asOfDate);
+        renderRegionTable(regionAgg, state.asOfDate);
+      }
+      notesHost.hidden = false;
+      setStatus('As of ' + state.asOfDate + ' · ' + allRows.length + ' open invoice group' + (allRows.length === 1 ? '' : 's'), false);
+    }
+
+    wireSortableHeaders(reportHost, state, render);
+    reportHost.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-region]');
+      if (!btn) return;
+      state.drillRegion = btn.getAttribute('data-region');
+      state.sortKey = null;
+      render();
+    });
+    breadcrumbHost.addEventListener('click', function(e){
+      if (!e.target.closest('#aging-back-btn')) return;
+      state.drillRegion = null;
+      state.sortKey = null;
+      render();
+    });
+    asOfDateInput.addEventListener('change', function(){ if (asOfDateInput.value){ state.asOfDate = asOfDateInput.value; render(); } });
+    exportBtn.addEventListener('click', function(){
+      if (!state.lastExport) return;
+      exportRowsToXlsx(state.lastExport.filename, 'Customer Aging', state.lastExport.rows, exportBtn);
+    });
+
+    return {
+      init: function(){
+        setStatus('Loading customer aging…');
+        loadShardedDoc('customerAging', 'current').then(function(result){
+          if (!result || !result.rows.length){
+            renderEmpty('No data yet', 'The sync job has not produced a customer aging snapshot yet.');
+            setStatus('No data yet', true);
+            return;
+          }
+          allRows = result.rows;
+          if (!state.asOfDate) state.asOfDate = todayStr();
+          asOfDateInput.value = state.asOfDate;
+          render();
+        }).catch(function(err){
+          setStatus('Could not load aging data (' + errorText(err) + ')', true);
+          renderEmpty('Could not load data', 'Failed to load customer aging data: ' + escapeHtml(errorText(err)) + '. Try reopening the report.');
+        });
       },
     };
   })();
