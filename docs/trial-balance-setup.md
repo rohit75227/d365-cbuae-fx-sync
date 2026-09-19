@@ -86,6 +86,29 @@ control box (Currency toggle, Period, Main Account, Export button, status
 pill) keeps its natural width and the row wraps to a new line under space
 pressure instead of squeezing any one box.
 
+**2026-09-19: Vendor Balance / Customer Balance's Period dropdown replaced
+with an "As on Date" picker.** Report-owner request: "whatever date I
+select I need to know balance as on date -- sum of all transactions and
+fetch the total." Client-side only, no new collections, no sync changes
+-- `vendor`/`customer` were already storing a cumulative (sum of every
+transaction since ledger inception) closing balance per month, exactly
+what was asked for; the only thing missing was a way to pick it by date
+instead of by fiscal-year/period. Replaced each tab's `.acct-combo` Period
+control with a native `<input type="date">` (same `createDatePicker()`
+in-page calendar Company TB already uses), clamped to the same
+full-history range as every other tab (`tb/index`'s earliest/latest
+period). The picked date resolves to its containing month via the same
+`ymKey()` helper Company TB uses and loads that month's already-cumulative
+closing balance -- **this snaps to month-end, it does not interpolate a
+mid-month balance**, since `vendor`/`customer` (like every other
+collection in this report) are only synced monthly, not daily; every date
+within a given month therefore shows the identical figure (that month's
+closing), which the status line makes explicit ("As of 2026-09-15 (Sep
+2026 closing)") rather than implying false daily precision. If day-level
+vendor/customer balances are ever needed, that requires a new data
+pipeline (daily snapshots or a live running-balance query), not just a UI
+change -- flagged here as a known limitation, not implemented.
+
 ## How data gets in (no credentials needed)
 
 The report reads a shared, org-internal database attached to that Artifact

@@ -1032,11 +1032,8 @@
       </div>
     </div>
     <div class="control-group">
-      <span class="eyebrow">Period</span>
-      <div class="acct-combo" id="vendor-period-combo">
-        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
-        <div class="acct-combo-panel" hidden></div>
-      </div>
+      <span class="eyebrow">As on Date</span>
+      <input type="date" class="date-input" id="vendor-as-of-date" aria-label="Vendor balance as on date">
     </div>
     <div class="control-group">
       <span class="eyebrow">Company</span>
@@ -1072,10 +1069,10 @@
     </div>
     <footer class="notes" id="vendor-notes-host" hidden>
       <span class="wordmark">Huda Beauty</span>
-      <span>Balance is cumulative from ledger inception through the selected period end (vendor balances are Balance Sheet / AP &mdash; no fiscal-year reset)</span>
+      <span>Balance is cumulative from ledger inception through the selected date &mdash; the sum of every transaction posted through that date (vendor balances are Balance Sheet / AP &mdash; no fiscal-year reset); the underlying sync is monthly, so the figure shown is that date's month-end closing balance</span>
       <span>Accounting &amp; Reporting shows each vendor's balance in its company's local accounting currency and in USD reporting currency, side by side</span>
       <span>Transaction Currency shows one row per (vendor, original posting currency) &mdash; a vendor invoiced in more than one currency has more than one row; amounts are not converted and are not meant to be summed across currencies</span>
-      <span>Company / Vendor Group / Vendor filters narrow the table without re-querying &mdash; only vendors with a nonzero balance that period are listed</span>
+      <span>Company / Vendor Group / Vendor filters narrow the table without re-querying &mdash; only vendors with a nonzero balance as of the selected date are listed</span>
     </footer>
   </main>
 </div>
@@ -1091,11 +1088,8 @@
       </div>
     </div>
     <div class="control-group">
-      <span class="eyebrow">Period</span>
-      <div class="acct-combo" id="customer-period-combo">
-        <input type="text" class="acct-combo-input" placeholder="Select period" autocomplete="off" aria-label="Fiscal year and period">
-        <div class="acct-combo-panel" hidden></div>
-      </div>
+      <span class="eyebrow">As on Date</span>
+      <input type="date" class="date-input" id="customer-as-of-date" aria-label="Customer balance as on date">
     </div>
     <div class="control-group">
       <span class="eyebrow">Company</span>
@@ -1131,10 +1125,10 @@
     </div>
     <footer class="notes" id="customer-notes-host" hidden>
       <span class="wordmark">Huda Beauty</span>
-      <span>Balance is cumulative from ledger inception through the selected period end (customer balances are Balance Sheet / AR &mdash; no fiscal-year reset)</span>
+      <span>Balance is cumulative from ledger inception through the selected date &mdash; the sum of every transaction posted through that date (customer balances are Balance Sheet / AR &mdash; no fiscal-year reset); the underlying sync is monthly, so the figure shown is that date's month-end closing balance</span>
       <span>Accounting &amp; Reporting shows each customer's balance in its company's local accounting currency and in USD reporting currency, side by side</span>
       <span>Transaction Currency shows one row per (customer, original posting currency) &mdash; a customer invoiced in more than one currency has more than one row; amounts are not converted and are not meant to be summed across currencies</span>
-      <span>Company / Customer Group / Customer filters narrow the table without re-querying &mdash; only customers with a nonzero balance that period are listed</span>
+      <span>Company / Customer Group / Customer filters narrow the table without re-querying &mdash; only customers with a nonzero balance as of the selected date are listed</span>
     </footer>
   </main>
 </div>
@@ -3508,27 +3502,32 @@
 
   // ========================================================================
   // VENDOR BALANCE view -- one row per (Company, Vendor Account), cumulative
-  // since inception through the selected period end. Two independent shard
-  // sets in the "vendor" collection: vendor/<key>/shards (accounting +
+  // since inception through an "As on Date" the user picks. Two independent
+  // shard sets in the "vendor" collection: vendor/<key>/shards (accounting +
   // reporting currency, one row per vendor) and vendor/<key>/currency-shards
   // (one row per vendor + original transaction currency) -- see
-  // sql/vendor_balance.sql and sql/vendor_balance_by_currency.sql. The
-  // period dropdown reuses the SAME shared `index` (from tb/index) as every
-  // other tab so the period list stays one consistent roster across the
-  // whole report, even though "vendor" is only backfilled for the periods
-  // someone has actually synced -- render() shows "not yet synced" rather
-  // than an error for any other period, same as Intercompany does for its
-  // own collection.
+  // sql/vendor_balance.sql and sql/vendor_balance_by_currency.sql. The date
+  // picker resolves to the "YYYY-MM" key (ymKey(), shared with Company TB)
+  // whose month contains the picked date and loads THAT month's already
+  // cumulative closing balance -- the sync is monthly, not daily, so every
+  // date within a month resolves to the same figure (that month's
+  // month-end closing), same snapping behavior Company TB already
+  // documents for its own date range. The date picker is clamped to the
+  // SAME shared `index` (from tb/index) range as every other tab so it
+  // never lets a user pick a month with no vendor sync yet -- render()
+  // still shows "not yet synced" rather than an error if one somehow is
+  // reachable, same as Intercompany does for its own collection.
   // ========================================================================
   var Vendor = (function(){
-    var state = { periodKey: null, mode: 'balance', company: 'ALL', groups: [], vendor: 'ALL', sortKey: null, sortDir: 'desc' };
+    var state = { asOfDate: null, mode: 'balance', company: 'ALL', groups: [], vendor: 'ALL', sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('vendor-status-dot');
     var statusText = document.getElementById('vendor-status-text');
     var reportHost = document.getElementById('vendor-report-host');
     var bannerHost = document.getElementById('vendor-banner-host');
     var notesHost = document.getElementById('vendor-notes-host');
-    var periodCombo = createPeriodCombo(document.getElementById('vendor-period-combo'), function(key){ state.periodKey = key; render(); });
+    var asOfDateInput = document.getElementById('vendor-as-of-date');
+    createDatePicker(asOfDateInput);
     var companySelect = document.getElementById('vendor-company-select');
     var groupMulti = createMultiSelect(
       document.getElementById('vendor-group-ms'), 'All Groups', function(sel){
@@ -3718,31 +3717,31 @@
     }
 
     function render(){
-      var key = state.periodKey;
-      if (!key) return;
-      setStatus('Loading vendor balance · ' + key + '…');
+      if (!state.asOfDate) return;
+      var key = ymKey(state.asOfDate);
+      setStatus('Loading vendor balance as of ' + state.asOfDate + '…');
 
       var loader = state.mode === 'balance' ? loadShardedDoc('vendor', key) : loadCurrencyShards(key);
       loader.then(function(result){
         if (!result || !result.rows.length){
-          renderEmpty('No data for this period', 'The sync job has not produced a vendor balance snapshot for <code>' + key + '</code> yet.');
-          setStatus('No data for ' + key, true);
+          renderEmpty('No data for this date', 'The sync job has not produced a vendor balance snapshot for <code>' + key + '</code> (covering ' + state.asOfDate + ') yet.');
+          setStatus('No data for ' + state.asOfDate, true);
           return;
         }
         populateFilters(result.rows);
         var filtered = applyFilters(result.rows);
         if (!filtered.length){
-          renderEmpty('No matching vendors', 'No vendor balances match the current filters for ' + periodLabelFromKey(key) + '.');
+          renderEmpty('No matching vendors', 'No vendor balances match the current filters as of ' + state.asOfDate + '.');
           setStatus('No matches', false);
           return;
         }
         if (state.mode === 'balance') renderBalanceTable(filtered, key);
         else renderTransactionTable(filtered, key);
         notesHost.hidden = false;
-        setStatus(periodLabelFromKey(key) + ' · ' + filtered.length + ' row' + (filtered.length === 1 ? '' : 's'), false);
+        setStatus('As of ' + state.asOfDate + ' (' + periodLabelFromKey(key) + ' closing) · ' + filtered.length + ' row' + (filtered.length === 1 ? '' : 's'), false);
       }).catch(function(err){
         setStatus('Could not load vendor data (' + errorText(err) + ')', true);
-        renderEmpty('Could not load data', 'Failed to load vendor balance data for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period, or reopen the report.');
+        renderEmpty('Could not load data', 'Failed to load vendor balance data as of ' + state.asOfDate + ': ' + escapeHtml(errorText(err)) + '. Try switching date, or reopen the report.');
       });
     }
 
@@ -3761,6 +3760,7 @@
       if (!state.lastExport) return;
       exportRowsToXlsx(state.lastExport.filename, 'Vendor Balance', state.lastExport.rows, exportBtn);
     });
+    asOfDateInput.addEventListener('change', function(){ if (asOfDateInput.value){ state.asOfDate = asOfDateInput.value; render(); } });
 
     return {
       init: function(){
@@ -3769,7 +3769,16 @@
           setStatus('No data yet', true);
           return;
         }
-        state.periodKey = periodCombo.populate(index, state.periodKey);
+        // Clamp to the same synced range Company TB uses (index is
+        // newest-first); default to the latest period's own month-end the
+        // first time this loads, same "start on the most recent data"
+        // precedent as every other tab's period default.
+        var latest = periodKeyToDates(index[0].key);
+        var earliest = periodKeyToDates(index[index.length - 1].key);
+        asOfDateInput.min = earliest.first;
+        asOfDateInput.max = latest.last;
+        if (!state.asOfDate) state.asOfDate = latest.last;
+        asOfDateInput.value = state.asOfDate;
         render();
       },
     };
@@ -3777,20 +3786,23 @@
 
   // ========================================================================
   // CUSTOMER BALANCE view -- one row per (Company, Customer Account),
-  // cumulative since inception through the selected period end. Mirrors the
-  // VENDOR BALANCE view exactly (same two-shard-set "customer" collection
-  // shape, same filter/toggle behavior) -- see sql/customer_balance.sql and
+  // cumulative since inception through an "As on Date" the user picks.
+  // Mirrors the VENDOR BALANCE view exactly (same two-shard-set "customer"
+  // collection shape, same date-snapping behavior -- see that view's own
+  // header comment for the full explanation -- same filter/toggle
+  // behavior) -- see sql/customer_balance.sql and
   // sql/customer_balance_by_currency.sql.
   // ========================================================================
   var Customer = (function(){
-    var state = { periodKey: null, mode: 'balance', company: 'ALL', groups: [], customer: 'ALL', sortKey: null, sortDir: 'desc' };
+    var state = { asOfDate: null, mode: 'balance', company: 'ALL', groups: [], customer: 'ALL', sortKey: null, sortDir: 'desc' };
 
     var statusDot = document.getElementById('customer-status-dot');
     var statusText = document.getElementById('customer-status-text');
     var reportHost = document.getElementById('customer-report-host');
     var bannerHost = document.getElementById('customer-banner-host');
     var notesHost = document.getElementById('customer-notes-host');
-    var periodCombo = createPeriodCombo(document.getElementById('customer-period-combo'), function(key){ state.periodKey = key; render(); });
+    var asOfDateInput = document.getElementById('customer-as-of-date');
+    createDatePicker(asOfDateInput);
     var companySelect = document.getElementById('customer-company-select');
     var groupMulti = createMultiSelect(
       document.getElementById('customer-group-ms'), 'All Groups', function(sel){
@@ -3972,31 +3984,31 @@
     }
 
     function render(){
-      var key = state.periodKey;
-      if (!key) return;
-      setStatus('Loading customer balance · ' + key + '…');
+      if (!state.asOfDate) return;
+      var key = ymKey(state.asOfDate);
+      setStatus('Loading customer balance as of ' + state.asOfDate + '…');
 
       var loader = state.mode === 'balance' ? loadShardedDoc('customer', key) : loadCurrencyShards(key);
       loader.then(function(result){
         if (!result || !result.rows.length){
-          renderEmpty('No data for this period', 'The sync job has not produced a customer balance snapshot for <code>' + key + '</code> yet.');
-          setStatus('No data for ' + key, true);
+          renderEmpty('No data for this date', 'The sync job has not produced a customer balance snapshot for <code>' + key + '</code> (covering ' + state.asOfDate + ') yet.');
+          setStatus('No data for ' + state.asOfDate, true);
           return;
         }
         populateFilters(result.rows);
         var filtered = applyFilters(result.rows);
         if (!filtered.length){
-          renderEmpty('No matching customers', 'No customer balances match the current filters for ' + periodLabelFromKey(key) + '.');
+          renderEmpty('No matching customers', 'No customer balances match the current filters as of ' + state.asOfDate + '.');
           setStatus('No matches', false);
           return;
         }
         if (state.mode === 'balance') renderBalanceTable(filtered, key);
         else renderTransactionTable(filtered, key);
         notesHost.hidden = false;
-        setStatus(periodLabelFromKey(key) + ' · ' + filtered.length + ' row' + (filtered.length === 1 ? '' : 's'), false);
+        setStatus('As of ' + state.asOfDate + ' (' + periodLabelFromKey(key) + ' closing) · ' + filtered.length + ' row' + (filtered.length === 1 ? '' : 's'), false);
       }).catch(function(err){
         setStatus('Could not load customer data (' + errorText(err) + ')', true);
-        renderEmpty('Could not load data', 'Failed to load customer balance data for ' + key + ': ' + escapeHtml(errorText(err)) + '. Try switching period, or reopen the report.');
+        renderEmpty('Could not load data', 'Failed to load customer balance data as of ' + state.asOfDate + ': ' + escapeHtml(errorText(err)) + '. Try switching date, or reopen the report.');
       });
     }
 
@@ -4015,6 +4027,7 @@
       if (!state.lastExport) return;
       exportRowsToXlsx(state.lastExport.filename, 'Customer Balance', state.lastExport.rows, exportBtn);
     });
+    asOfDateInput.addEventListener('change', function(){ if (asOfDateInput.value){ state.asOfDate = asOfDateInput.value; render(); } });
 
     return {
       init: function(){
@@ -4023,7 +4036,12 @@
           setStatus('No data yet', true);
           return;
         }
-        state.periodKey = periodCombo.populate(index, state.periodKey);
+        var latest = periodKeyToDates(index[0].key);
+        var earliest = periodKeyToDates(index[index.length - 1].key);
+        asOfDateInput.min = earliest.first;
+        asOfDateInput.max = latest.last;
+        if (!state.asOfDate) state.asOfDate = latest.last;
+        asOfDateInput.value = state.asOfDate;
         render();
       },
     };
