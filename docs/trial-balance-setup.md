@@ -2011,3 +2011,63 @@ alone but because the batch request body itself has a ~1MB size limit --
 several of the 63-column-free, single-period shard files are 150-300KB
 each, so more than ~4-5 of them together exceed it. Every write was still
 individually `if_version`-pinned and every batch committed atomically.
+
+## 2026-09-24: Vendor Balance / Customer Balance refreshed alongside the multi-period tb catch-up
+
+The report owner pointed out, right after the tb/movement/currencytb/
+currencymovement catch-up above, that Vendor Balance and Customer Balance
+were still sitting on 2026-09-18 data -- correct, since (per the
+2026-09-18 entry) `vendor`/`customer` have never been part of any
+recurring sync, daily or intraday.
+
+**Checked scope first**: a `createddatetime`-based 30-day scan against
+`vendtrans`/`custtrans` directly (mirroring the GL scan, since both
+tables carry the same field) showed only 2026-08 and 2026-09 with new
+activity -- 2025-12/2026-04/2026-06 (which do show up in the 30-day
+window) all had a stable `latest_created` matching prior checks, so the
+GL-side Jan-May batch correction documented above did not touch the
+AP/AR subledgers at all. This kept the fix to exactly the same two-month
+scope as the 2026-09-18 refresh.
+
+**Method**: identical to 2026-09-18 -- one query execution per grain
+(balance and currency) covering both August and September, forward-summed
+on top of the currently-stored **2026-07** balance (trusted as settled,
+per that entry's own precedent) via `abs(balance) <= 0.01` zero-row
+dropping. Spot-checked the single largest swing found (HBDM/V000002,
+vendor balance swinging by $192M) against a direct unrestricted
+cumulative query on `vendtrans` -- matched the forward-summed figure to
+the cent, confirming the seed-plus-movement arithmetic is sound before
+trusting the rest.
+
+**What changed**:
+
+| Grain | Period | Stored rows | Fresh rows | Added | Removed | Changed |
+|---|---|---:|---:|---:|---:|---:|
+| vendor balance | 2026-08 | 233 | 235 | 2 | 0 | 16 |
+| vendor balance | 2026-09 | 236 | 326 | 91 | 1 | 46 |
+| vendor currency | 2026-08 | 467 | 471 | 4 | 0 | 26 |
+| vendor currency | 2026-09 | 474 | 560 | 87 | 1 | 63 |
+| customer balance | 2026-08 | 145 | 146 | 1 | 0 | 17 |
+| customer balance | 2026-09 | 148 | 151 | 3 | 0 | 42 |
+| customer currency | 2026-08 | 276 | 279 | 3 | 0 | 24 |
+| customer currency | 2026-09 | 280 | 286 | 6 | 0 | 53 |
+
+September's much larger row growth (91 new vendor accounts, 87 new
+vendor-currency combos) reflects six days of uncaptured AP activity
+landing in the still-open current period, consistent with the pattern
+`tb`/`movement` already showed for the same window.
+
+**Pushed**: one 12-write atomic batch (both period docs, both shard
+docs, both currency-shard docs, for both `vendor` and `customer`, both
+periods) -- small enough (~400KB total) to fit in a single call, unlike
+the multi-batch tb push above. Every entry `if_version`-pinned:
+`vendor/2026-08` v3->v4, `vendor/2026-09` v4->v5, `customer/2026-08`
+v3->v4, `customer/2026-09` v4->v5, all four shard/currency-shard docs
+v2->v3 or v3->v4 as applicable.
+
+**Still open**: `vendor`/`customer` remain outside the recurring
+intraday sync procedure -- this is now the second consecutive time they
+were caught up only because someone asked, days after `tb` had already
+moved on. Adding them to the routine 4-collection intraday sync (they'd
+only need a one-month-forward carry each firing, same shape as this
+targeted refresh) is recommended but not yet done.
