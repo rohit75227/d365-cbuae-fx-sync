@@ -1912,3 +1912,102 @@ they're no longer needed at this row count). No change to
 `report/consolidated-trial-balance.html` was needed -- the Aging tab reads
 whatever is in the `customerAging` collection at render time, so the live
 artifact picked up the filtered data immediately without a republish.
+
+## 2026-09-24: Multi-period intraday catch-up (2026-01/02/03/04/05/08/09) after
+several days of blocked writes, plus a query-size pitfall and a pre-existing
+Dec-2025 data-quality finding
+
+The intraday sync (4x/day, createddatetime-scoped) ran every ~2 hours from
+2026-09-19 through 2026-09-24 as designed, correctly detecting real drift
+each time -- but every attempted `ArtifactData` pinned write during that
+window failed with "no approval record in this session," a session-level
+block unrelated to the data itself. Multiple retries across several days
+did not clear it. The report owner then asked directly for a refresh,
+which surfaced the actual fix (see below) and gave a reason to redo the
+whole scan properly rather than push the now-stale patch computed days
+earlier.
+
+**Scope had grown**: by the time of this refresh, the 30-day
+createddatetime scan flagged not just September but five backdated
+periods too -- 2026-01 through 2026-05, all landing at the *exact same*
+`createddatetime` (2026-09-23T10:50:18Z), consistent with one batch
+correction touching several periods at once (the kind of precedent this
+doc has flagged before) -- plus 2026-08 and the ever-moving 2026-09.
+
+**Query-size pitfall discovered and fixed**: the first attempt combined
+all 7 periods' closing + movement into one query (63 aggregate columns
+via repeated `SUM(CASE WHEN accountingdate < <cutoff> ...)`), per this
+doc's own "combine periods in one execution" guidance. That query's
+result came back reporting `truncated: true` but with a `total_row_count`
+that matched its own (incomplete) row count exactly -- 969 rows instead
+of the true ~3,336 -- so the truncation was easy to miss by checking
+`returned_row_count == total_row_count` alone. The silently-partial
+aggregation produced Sept debit/credit totals off by ~$950K, which
+briefly looked like a genuine one-sided posting (e.g. routed through an
+excluded consolidation/KY ledger) before a from-scratch minimal check
+(no grouping, just a raw SUM) proved the true September total nets to
+exactly 0.00 debit-credit, and a grouped-but-single-period version of the
+same query returned the correct 3,336 rows with no truncation. **Fix**:
+don't combine many periods' worth of aggregate columns (BS+PL closing +
+6-way movement split, x7 periods = 63 columns) into one query when the
+grouping key alone (entity, account, txn_ccy) already yields thousands of
+rows -- the byte size compounds and this connector's truncation signal
+isn't reliable at that size. Re-ran as 7 separate single-period queries
+instead (same shape already proven for Sept), each one verified to
+balance to the cent before use.
+
+**Results, diffed against currently-stored data and patched only where
+changed** (all under the same `EPS=0.005` threshold and the same
+"leave the three HBCB/HBUK/HBFR `3141001` simulated-adjustment cells
+alone" rule as every prior entry in this doc):
+
+| Period | tb cells | movement cells | currencytb cells | currencymovement cells |
+|---|---:|---:|---:|---:|
+| 2026-01 | 0 | 14 | 0 | 14 |
+| 2026-02 | 0 | 8 | 0 | 8 |
+| 2026-03 | 0 | 12 | 0 | 12 |
+| 2026-04 | 0 | 15 | 8 | 15 |
+| 2026-05 | 0 | 9 | 10 | 9 |
+| 2026-08 | 26 | 83 | 95 | 175 |
+| 2026-09 | 291 | 283 | 407 | 379 |
+
+Jan-May's zero `tb` changes despite real `movement` changes make sense --
+the backdated batch shifted gross debit/credit within an account (e.g. a
+reversal + repost, or a reclass that nets to the same closing balance)
+without moving that account's cumulative closing balance. Aug and Sept
+show genuine closing drift on top of that, consistent with ordinary
+same-day GL accumulation plus this batch's own effect landing inside the
+still-open current period.
+
+**Pre-existing Dec-2025 data-quality finding (flagged, not fixed here)**:
+chaining Opening+Dr-Cr=Closing validation from Dec-2025 into the patched
+January figures failed for 1,364 (account, entity) combos -- but every
+one traced to the *already-stored* Dec-2025 `tb` document being wrong
+relative to a from-scratch recompute, not to anything this sync touched.
+Example: account 6790011/2222001-style accounts where the live Dec-2025
+`tb` shows a nonzero balance but a direct, unrestricted query of that
+exact account+ledger's full history through 2025-12-31 nets to exactly
+0.00. Dec-2025's `createddatetime` footprint has been stable (unchanged)
+across every scan this whole session, so this isn't new drift -- it looks
+like an error already baked into Dec-2025's `tb` document from however it
+was originally built (version 10, last touched 2026-09-10), predating
+this session's own verified rebuilds. Chaining validation for every other
+transition (Feb through Sept, using the newly patched periods) passed
+with zero failures, confirming this refresh's own math is internally
+consistent -- the Dec-2025 discrepancy is a separate, pre-existing issue
+that needs its own deep-audit pass (comparing Dec-2025, and possibly
+earlier FY2025 periods, against a full from-scratch recompute) rather
+than being guessed at inside a routine intraday sync.
+
+**Push mechanics**: `tb`'s per-period `generatedAt` and `tb/index`'s
+matching entries were bumped only for the 7 touched periods. Re-sharded
+each collection's patched rows using the same ~200KB-per-shard target
+`scripts/build_*.py` already uses elsewhere in this repo, which happened
+to preserve every period's existing shard count exactly. The full push
+(52 individual document writes across `tb`/`movement`/`currencytb`/
+`currencymovement`/`tb/index`) had to be split into 11 separate
+`ArtifactData` batch calls, not because of the 50-writes-per-batch cap
+alone but because the batch request body itself has a ~1MB size limit --
+several of the 63-column-free, single-period shard files are 150-300KB
+each, so more than ~4-5 of them together exceed it. Every write was still
+individually `if_version`-pinned and every batch committed atomically.
